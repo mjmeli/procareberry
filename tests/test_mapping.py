@@ -115,3 +115,34 @@ def test_explicit_meal_description_preserves_known_foods_only():
         [record(kind="meal_activity", data={"desc": "Breakfast combo"})], "s", "kid", "child", Report()
     )[0]
     assert len(event.values["foods"]) == 2
+
+
+def test_shared_source_type_selects_explicit_subtype_without_changing_identity():
+    options = {
+        "source_rules": {
+            "school_health": [
+                {
+                    "kind": "temperature",
+                    "when": {"data.type": "temperature"},
+                    "fields": {"amount": "data.value", "units": "data.units"},
+                },
+                {"kind": "medicine", "when": {"data.type": "medicine"}, "fields": {"medicine": "data.name"}},
+            ]
+        }
+    }
+    mapper, report = Mapper("UTC", options), Report()
+    rows = [record("same", "school_health", {"type": "temperature", "value": 37, "units": "C"})]
+    temp = mapper.map(rows, "s", "kid", "child", report)[0]
+    med = mapper.map(
+        [record("same", "school_health", {"type": "medicine", "name": "Vitamin"})],
+        "s",
+        "kid",
+        "child",
+        Report(),
+    )[0]
+    assert temp.kind == "temperature" and med.kind == "medicine"
+    assert temp.source_key == med.source_key
+    assert not mapper.map(
+        [record("unknown", "school_health", {"type": "other"})], "s", "kid", "child", report
+    )
+    assert report.counts["skipped"] == 1

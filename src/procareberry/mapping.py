@@ -88,13 +88,20 @@ class Mapper:
         rules = self.options.get("source_rules", {})
         if not isinstance(rules, dict):
             raise MappingError("source_rules must be an object")
-        for rule in rules.values():
-            if (
-                not isinstance(rule, dict)
-                or rule.get("kind") not in KINDS
-                or not isinstance(rule.get("fields", {}), dict)
-            ):
-                raise MappingError("invalid explicit source rule")
+        for definition in rules.values():
+            variants = definition if isinstance(definition, list) else [definition]
+            if not variants:
+                raise MappingError("explicit source rule lists cannot be empty")
+            for rule in variants:
+                if (
+                    not isinstance(rule, dict)
+                    or rule.get("kind") not in KINDS
+                    or any(
+                        not isinstance(rule.get(name, {}), dict)
+                        for name in ("fields", "when", "constants", "values")
+                    )
+                ):
+                    raise MappingError("invalid explicit source rule")
         self.rules = rules
 
     def _base(self, raw, context, source_child, child_uid, kind):
@@ -127,6 +134,17 @@ class Mapper:
         start = timestamp(values.pop("start_time"), self.tz) if "start_time" in values else event.start
         end = timestamp(values.pop("end_time"), self.tz) if "end_time" in values else None
         return replace(event, start=start, end=end, values=values)
+
+    def _select_rule(self, raw, definition):
+        variants = definition if isinstance(definition, list) else [definition]
+        matches = [
+            rule
+            for rule in variants
+            if all(field(raw, path) == value for path, value in rule.get("when", {}).items())
+        ]
+        if len(matches) != 1:
+            raise MappingError("source subtype needs exactly one matching explicit rule")
+        return matches[0]
 
     def _default(self, raw, context, source_child, child_uid):
         atype = raw.get("activity_type")
@@ -208,7 +226,9 @@ class Mapper:
                     report.add("ignored")
                     continue
                 event = (
-                    self._explicit(raw, context, source_child, child_uid, self.rules[atype])
+                    self._explicit(
+                        raw, context, source_child, child_uid, self._select_rule(raw, self.rules[atype])
+                    )
                     if atype in self.rules
                     else self._default(raw, context, source_child, child_uid)
                 )

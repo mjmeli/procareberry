@@ -81,6 +81,7 @@ For an additional source type, define a `source_rules` entry with:
 - `fields`: destination input names mapped to dot-separated paths in the original Procare record.
 - `values`: optional explicit value translations per field. Unknown values are skipped.
 - `constants`: explicit configuration for information you have verified, never guessed defaults.
+- `when`: optional exact field-value conditions. A source type can contain a list of rules for different subtypes; exactly one must match, so a shared health activity type can map temperature and medicine records separately.
 
 All events require a stable source `id` and `activity_time`. Use `start_time`/`end_time` field mappings when the source has different interval boundaries. Source comments are included by built-in mappings; explicit rules should map `notes` where supported. Ambiguous local timestamps during a daylight-saving transition require a source UTC offset.
 
