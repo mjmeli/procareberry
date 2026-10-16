@@ -302,7 +302,7 @@ class Huckleberry:
                 unit_map = (
                     {"weight": "kg", "height": "cm", "head": "hcm"}
                     if units == "metric"
-                    else {"weight": "lbs", "height": "in", "head": "hin"}
+                    else {"weight": "lbs.oz", "height": "ft.in", "head": "hin"}
                 )
                 for name, unit in unit_map.items():
                     if name in values:

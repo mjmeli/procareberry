@@ -121,3 +121,24 @@ async def test_offset_override_does_not_leak(db):
         == -datetime.now(ZoneInfo("America/New_York")).utcoffset().total_seconds() / 60
     )
     assert Huckleberry(api, "America/New_York")
+
+
+@pytest.mark.parametrize(
+    "kind,values",
+    [
+        ("growth", {"weight": 15.5, "height": 25, "head": 15, "units": "imperial"}),
+        ("medicine", {"medicine": "Vitamin"}),
+        ("diaper", {"mode": "dry"}),
+        ("solids", {"foods": [{"name": "Banana", "amount": "some"}], "reaction": "LOVED"}),
+        ("pump", {"left_amount": 2, "right_amount": 1, "units": "oz"}),
+        ("activity", {"mode": "storyTime"}),
+        ("activity", {"mode": "storyTime", "duration": 0}),
+    ],
+)
+async def test_additional_valid_destination_shapes(destination, event, kind, values):
+    prepared = await destination.prepare(event(kind, values))
+    await destination.log(prepared)
+    records = await destination.scan(prepared)
+    assert len(records) == 1
+    actual = await destination.finish_logged_record(records[0], prepared)
+    assert destination.matches(actual, prepared.payload)

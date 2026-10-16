@@ -278,7 +278,11 @@ class Mapper:
                 except MappingError as exc:
                     report.add("skipped", str(exc))
                     continue
-            if event.end and event.end.timestamp() <= event.start.timestamp():
+            if event.end and (
+                event.end.timestamp() < event.start.timestamp()
+                or event.end.timestamp() == event.start.timestamp()
+                and event.kind in {"sleep", "nursing"}
+            ):
                 report.add("skipped", "event end must follow start")
                 continue
             result.append(

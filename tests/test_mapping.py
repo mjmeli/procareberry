@@ -146,3 +146,20 @@ def test_shared_source_type_selects_explicit_subtype_without_changing_identity()
         [record("unknown", "school_health", {"type": "other"})], "s", "kid", "child", report
     )
     assert report.counts["skipped"] == 1
+
+
+def test_zero_duration_activity_is_a_valid_recorded_event():
+    options = {
+        "source_rules": {
+            "school_play": {
+                "kind": "activity",
+                "fields": {"duration": "data.seconds"},
+                "constants": {"mode": "storyTime"},
+            }
+        }
+    }
+    report = Report()
+    events = Mapper("UTC", options).map(
+        [record("zero", "school_play", {"seconds": 0})], "s", "kid", "child", report
+    )
+    assert len(events) == 1 and events[0].end == events[0].start
