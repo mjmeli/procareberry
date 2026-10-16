@@ -1,4 +1,4 @@
-"""Evidence-based default mappings and explicit mappings for other source schemas."""
+"""Mappings for supported Procare parent-feed payloads."""
 
 import math
 import re
@@ -6,7 +6,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from .models import KINDS, Event, MappingError, Report, fingerprint
+from .models import Event, MappingError, Report, fingerprint
 
 IGNORED = frozenset(
     {
@@ -19,16 +19,6 @@ IGNORED = frozenset(
         "name_to_face_activity",
     }
 )
-ACTIVITY_MODES = {
-    "bath",
-    "brushTeeth",
-    "indoorPlay",
-    "outdoorPlay",
-    "screenTime",
-    "skinToSkin",
-    "storyTime",
-    "tummyTime",
-}
 DIAPERS = {
     "wet": "pee",
     "pee": "pee",
@@ -73,36 +63,11 @@ def number(value, label, *, positive=False):
     return result
 
 
-def field(raw, path):
-    current = raw
-    for part in path.split("."):
-        if not isinstance(current, dict):
-            return None
-        current = current.get(part)
-    return current
-
-
 class Mapper:
     def __init__(self, timezone_name, options=None):
         self.tz, self.options = ZoneInfo(timezone_name), options or {}
-        rules = self.options.get("source_rules", {})
-        if not isinstance(rules, dict):
-            raise MappingError("source_rules must be an object")
-        for definition in rules.values():
-            variants = definition if isinstance(definition, list) else [definition]
-            if not variants:
-                raise MappingError("explicit source rule lists cannot be empty")
-            for rule in variants:
-                if (
-                    not isinstance(rule, dict)
-                    or rule.get("kind") not in KINDS
-                    or any(
-                        not isinstance(rule.get(name, {}), dict)
-                        for name in ("fields", "when", "constants", "values")
-                    )
-                ):
-                    raise MappingError("invalid explicit source rule")
-        self.rules = rules
+        if self.options.get("source_rules"):
+            raise MappingError("Custom source rules are no longer supported; remove source_rules")
 
     def _base(self, raw, context, source_child, child_uid, kind):
         identifier = raw.get("id")
@@ -116,35 +81,6 @@ class Mapper:
         start = timestamp(raw.get("activity_time"), self.tz)
         key = fingerprint([context, source_child, str(identifier)])
         return Event(key, kind, child_uid, start, source_ids=(str(identifier),))
-
-    def _explicit(self, raw, context, source_child, child_uid, rule):
-        event = self._base(raw, context, source_child, child_uid, rule["kind"])
-        values = dict(rule.get("constants", {}))
-        for name, path in rule.get("fields", {}).items():
-            if not isinstance(path, str):
-                raise MappingError("source field paths must be strings")
-            value = field(raw, path)
-            if value is not None and value != "":
-                translations = rule.get("values", {}).get(name, {})
-                if translations:
-                    if str(value) not in translations:
-                        raise MappingError(f"unmapped {name}")
-                    value = translations[str(value)]
-                values[name] = value
-        start = timestamp(values.pop("start_time"), self.tz) if "start_time" in values else event.start
-        end = timestamp(values.pop("end_time"), self.tz) if "end_time" in values else None
-        return replace(event, start=start, end=end, values=values)
-
-    def _select_rule(self, raw, definition):
-        variants = definition if isinstance(definition, list) else [definition]
-        matches = [
-            rule
-            for rule in variants
-            if all(field(raw, path) == value for path, value in rule.get("when", {}).items())
-        ]
-        if len(matches) != 1:
-            raise MappingError("source subtype needs exactly one matching explicit rule")
-        return matches[0]
 
     def _default(self, raw, context, source_child, child_uid):
         atype = raw.get("activity_type")
@@ -171,7 +107,7 @@ class Mapper:
             bottle_type = self.options.get("bottle_types", {}).get(description)
             if not bottle_type:
                 raise MappingError("bottle description needs an explicit bottle_types mapping")
-            # The parent feed's documented amount is ounces; custom source rules can specify another format.
+            # The supported parent feed reports bottle amounts in ounces.
             values = {"bottle_type": bottle_type, "units": "oz", "notes": comment}
             if data.get("amount") not in (None, ""):
                 values["amount"] = number(data["amount"], "bottle amount")
@@ -180,13 +116,13 @@ class Mapper:
             event = self._base(raw, context, source_child, child_uid, "diaper")
             category = str(data.get("type", "")).strip().lower()
             if category not in {"diaper", "diaper change", "potty", "toilet"}:
-                raise MappingError("bathroom type needs an explicit source rule")
+                raise MappingError("unsupported bathroom type")
             subtype = str(data.get("sub_type", "")).strip().lower()
             if subtype not in DIAPERS:
                 raise MappingError("unrecognized bathroom subtype")
             values = {"mode": DIAPERS[subtype], "notes": comment}
             if category in {"potty", "toilet"}:
-                raise MappingError("potty outcome requires an explicit how_it_happened mapping")
+                raise MappingError("potty records are not supported")
             return replace(event, values=values)
         if atype == "meal_activity":
             event = self._base(raw, context, source_child, child_uid, "solids")
@@ -206,7 +142,7 @@ class Mapper:
                     ),
                 },
             )
-        raise MappingError("unrecognized activity type; configure source_rules after checking its payload")
+        raise MappingError("unsupported activity type")
 
     def map(self, records, context, source_child, child_uid, report: Report):
         events, open_naps, end_naps = [], [], []
@@ -222,16 +158,10 @@ class Mapper:
                 label = "additional_types"
             report.source_types[label] = report.source_types.get(label, 0) + 1
             try:
-                if atype in IGNORED and atype not in self.rules:
+                if atype in IGNORED:
                     report.add("ignored")
                     continue
-                event = (
-                    self._explicit(
-                        raw, context, source_child, child_uid, self._select_rule(raw, self.rules[atype])
-                    )
-                    if atype in self.rules
-                    else self._default(raw, context, source_child, child_uid)
-                )
+                event = self._default(raw, context, source_child, child_uid)
                 if event.source_key in seen:
                     report.add("skipped", "duplicate source activity ID")
                     continue
@@ -245,8 +175,7 @@ class Mapper:
             except (MappingError, TypeError, ValueError) as exc:
                 reason = str(exc) if isinstance(exc, MappingError) else "invalid source structure"
                 report.add("skipped", reason)
-        # End-only rows can link explicitly via configurable rules. Default heuristic
-        # accepts only one preceding open start, never picks the 'nearest' among many.
+        # Accept only one preceding open start within this child and school.
         for end_event in sorted(end_naps, key=lambda e: e.start):
             if end_event.end is None:
                 report.add("skipped", "nap has no start or end")
@@ -269,19 +198,10 @@ class Mapper:
             report.add("skipped", "nap is still in progress")
         result = []
         for event in events:
-            if event.kind in {"activity", "pump"} and event.end is None and "duration" in event.values:
-                try:
-                    duration = number(event.values["duration"], "duration")
-                    event = replace(
-                        event, end=datetime.fromtimestamp(event.start.timestamp() + duration, self.tz)
-                    )
-                except MappingError as exc:
-                    report.add("skipped", str(exc))
-                    continue
             if event.end and (
                 event.end.timestamp() < event.start.timestamp()
                 or event.end.timestamp() == event.start.timestamp()
-                and event.kind in {"sleep", "nursing"}
+                and event.kind == "sleep"
             ):
                 report.add("skipped", "event end must follow start")
                 continue

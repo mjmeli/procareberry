@@ -12,22 +12,13 @@ Sync recorded Procare daycare activities to Huckleberry. Procareberry runs local
 | Bottle | Built-in `bottle_activity` | Explicit description-to-milk-type configuration; feed amounts are ounces; blank volume stays blank |
 | Diaper | Built-in `bathroom_activity` | Explicit diaper type and recognized wet/BM/both/dry subtype |
 | Solids | Built-in `meal_activity` | Food description must exactly match one catalog item or an explicitly configured meal description |
-| Potty | Explicit source rule | Mode and recorded potty outcome |
-| Temperature | Explicit source rule | Value and C/F units |
-| Medicine | Explicit source rule | Exact or configured existing medicine reference; units if an amount exists |
-| Growth | Explicit source rule | Actual measurements and metric/imperial units |
-| Nursing | Explicit source rule | Start, end and side; both side durations when supplied |
-| Pumping | Explicit source rule | Total volume or both side volumes, with units |
-| Activities | Explicit source rule | One supported activity mode; duration is optional |
 
-The less common Procare payload formats have not been verified against a live account. Their destination support is implemented and tested, but **no guessed source mappings are enabled**. `source_rules` lets you explicitly describe the fields your school returns. Unknown types and missing/ambiguous values are reported without stopping other events. Free-text meals are not split or interpreted automatically. Attendance, media, messages and administrative records are not imported.
-
-No live timer is started or stopped. Completed activity imports specifically preserve active/paused Huckleberry activity timers.
+Unknown types and missing/ambiguous values are reported without stopping other events. Free-text meals are not split or interpreted automatically. Potty, health, nursing, pumping, and general activity records are not supported. Attendance, media, messages, and administrative records are not imported.
 
 ## Docker quick start
 
 1. Copy `.env.example` to `.env` and fill in both accounts' email/password credentials.
-2. Create `config/`, copy `mappings.example.json` to `config/mappings.json`, and edit it for your daycare. The sample milk descriptions and custom rules are examples, not assertions about your school's data.
+2. Create `config/`, copy `mappings.example.json` to `config/mappings.json`, and edit it for your daycare. Replace the sample milk descriptions with your school's exact descriptions.
 3. List child IDs if either account has multiple children:
 
    ```sh
@@ -73,19 +64,11 @@ procareberry healthcheck
 
 `MAPPING_FILE` points at a JSON file. Built-in bottle mappings use `bottle_types` to map the exact Procare description to a Huckleberry milk type. `meal_descriptions` can map an exact meal description to a list of actual foods; optional portions must come from known data or explicit configuration.
 
-`foods` selects a specific existing food ID and catalog (`curated` or `custom`) when names are ambiguous. `medicines` selects an existing child-specific medicine ID. No food/medicine catalog items are created by the sync, including in write mode.
+`foods` selects a specific existing food ID and catalog (`curated` or `custom`) when names are ambiguous. No food catalog items are created by the sync, including in write mode.
 
-For an additional source type, define a `source_rules` entry with:
+All events require a stable source `id` and `activity_time`. Source comments are preserved. Ambiguous local timestamps during a daylight-saving transition require a source UTC offset.
 
-- `kind`: one of `sleep`, `bottle`, `solids`, `diaper`, `potty`, `temperature`, `medicine`, `growth`, `nursing`, `pump`, `activity`.
-- `fields`: destination input names mapped to dot-separated paths in the original Procare record.
-- `values`: optional explicit value translations per field. Unknown values are skipped.
-- `constants`: explicit configuration for information you have verified, never guessed defaults.
-- `when`: optional exact field-value conditions. A source type can contain a list of rules for different subtypes; exactly one must match, so a shared health activity type can map temperature and medicine records separately.
-
-All events require a stable source `id` and `activity_time`. Use `start_time`/`end_time` field mappings when the source has different interval boundaries. Source comments are included by built-in mappings; explicit rules should map `notes` where supported. Ambiguous local timestamps during a daylight-saving transition require a source UTC offset.
-
-See `mappings.example.json` for parameter names and synthetic examples of every additional category. Keep `source_rules` empty until you have checked those field paths against your school's actual payload. Do not post raw payloads containing child data in public issues.
+See `mappings.example.json` for the supported configuration. Do not post raw payloads containing child data in public issues.
 
 ## Configuration
 
@@ -126,6 +109,6 @@ uv run --locked ruff format --check .
 uv run --locked procareberry --help
 ```
 
-Direct dependencies are pinned and `uv.lock` locks transitive versions. The activity wrapper deliberately uses the tested internal helper in `huckleberry-api==0.4.8`; dependency upgrades must run the compatibility tests. No library fork or upstream change is required.
+Direct dependencies are pinned and `uv.lock` locks transitive versions. The Huckleberry wrapper is tested against `huckleberry-api==0.4.8`; dependency upgrades must run the compatibility tests. No library fork or upstream change is required.
 
 GitHub Actions validates code and builds containers for pull requests without publishing. Pushes to `main` and `v*` tags publish GHCR images. Optional Docker Hub publishing requires `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets. CI never needs real account credentials.

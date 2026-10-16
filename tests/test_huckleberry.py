@@ -22,13 +22,6 @@ from procareberry.models import MappingError
             {"mode": "both", "pee_amount": "medium", "poo_amount": "little", "notes": "synthetic"},
             None,
         ),
-        ("potty", {"mode": "pee", "how_it_happened": "wentPotty"}, None),
-        ("temperature", {"amount": 37.2, "units": "C"}, None),
-        ("medicine", {"medicine": "Vitamin", "amount": 1, "units": "ml"}, None),
-        ("growth", {"weight": 7, "height": 65, "units": "metric"}, None),
-        ("nursing", {"side": "left", "notes": "synthetic"}, "2026-10-16T10:10:00-04:00"),
-        ("pump", {"total_amount": 120, "units": "ml", "duration": 900}, None),
-        ("activity", {"mode": "tummyTime", "duration": 300, "notes": "synthetic"}, None),
     ],
 )
 async def test_real_pinned_logging_contract(destination, event, kind, values, end):
@@ -42,25 +35,6 @@ async def test_real_pinned_logging_contract(destination, event, kind, values, en
     assert len(matches) == 1
     record = await destination.finish_logged_record(matches[0], planned)
     assert destination.matches(record, planned.payload)
-
-
-@pytest.mark.parametrize("paused", [False, True])
-async def test_historical_activity_never_changes_timer(db, destination, event, paused):
-    timer = {
-        "tummyTime": {
-            "active": True,
-            "paused": paused,
-            "startTime": 1234567890000,
-            "duration": 42,
-            "notes": "keep",
-            "uuid": "0123456789abcdef",
-        }
-    }
-    db.write("activities/child", {"prefs": {}, "timer": timer})
-    original = copy.deepcopy(timer)
-    planned = await destination.prepare(event("activity", {"mode": "tummyTime", "duration": 60}))
-    await destination.log(planned)
-    assert db.data["activities/child"]["timer"] == original
 
 
 async def test_backfill_preserves_newer_summary(db, destination, event):
@@ -126,13 +100,8 @@ async def test_offset_override_does_not_leak(db):
 @pytest.mark.parametrize(
     "kind,values",
     [
-        ("growth", {"weight": 15.5, "height": 25, "head": 15, "units": "imperial"}),
-        ("medicine", {"medicine": "Vitamin"}),
         ("diaper", {"mode": "dry"}),
         ("solids", {"foods": [{"name": "Banana", "amount": "some"}], "reaction": "LOVED"}),
-        ("pump", {"left_amount": 2, "right_amount": 1, "units": "oz"}),
-        ("activity", {"mode": "storyTime"}),
-        ("activity", {"mode": "storyTime", "duration": 0}),
     ],
 )
 async def test_additional_valid_destination_shapes(destination, event, kind, values):
@@ -142,3 +111,11 @@ async def test_additional_valid_destination_shapes(destination, event, kind, val
     assert len(records) == 1
     actual = await destination.finish_logged_record(records[0], prepared)
     assert destination.matches(actual, prepared.payload)
+
+
+@pytest.mark.parametrize(
+    "kind", ["potty", "temperature", "medicine", "growth", "nursing", "pump", "activity"]
+)
+async def test_removed_destination_categories_rejected(destination, event, kind):
+    with pytest.raises(MappingError, match="unsupported destination category"):
+        await destination.prepare(event(kind, {}))

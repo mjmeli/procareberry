@@ -109,9 +109,6 @@ class Synchronizer:
                 if original.child_uid != event.child_uid or original.kind != event.kind:
                     report.add("conflict", "source category or child mapping changed; review manually")
                     return
-                if event.kind == "activity" and original.values.get("mode") != event.values.get("mode"):
-                    report.add("conflict", "activity category changed; review the existing entry manually")
-                    return
                 prepared = await self.destination.prepare(event)
                 overlaps = await self.destination.scan(prepared) if event.kind == "sleep" else []
                 if any(r.identity != record.identity for r in overlaps):

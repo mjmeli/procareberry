@@ -72,26 +72,6 @@ def test_missing_id_and_invalid_volume_skipped():
     assert report.counts["skipped"] == 2
 
 
-def test_explicit_rule_does_not_infer_unknown_value():
-    options = {
-        "source_rules": {
-            "school_temp": {
-                "kind": "temperature",
-                "fields": {"amount": "data.value", "units": "data.unit"},
-                "values": {"units": {"Celsius": "C"}},
-            }
-        }
-    }
-    mapper, report = Mapper("UTC", options), Report()
-    rows = [
-        record("a", "school_temp", {"value": 37, "unit": "Celsius"}),
-        record("b", "school_temp", {"value": 99, "unit": "unknown"}),
-    ]
-    events = mapper.map(rows, "s", "kid", "child", report)
-    assert len(events) == 1 and events[0].values == {"amount": 37, "units": "C"}
-    assert report.counts["skipped"] == 1
-
-
 def test_dst_ambiguous_local_times_rejected_and_offset_times_preserved():
     mapper = Mapper("America/New_York")
     for value in ("2026-11-01T01:30:00", "2026-03-08T02:30:00"):
@@ -117,49 +97,37 @@ def test_explicit_meal_description_preserves_known_foods_only():
     assert len(event.values["foods"]) == 2
 
 
-def test_shared_source_type_selects_explicit_subtype_without_changing_identity():
-    options = {
-        "source_rules": {
-            "school_health": [
-                {
-                    "kind": "temperature",
-                    "when": {"data.type": "temperature"},
-                    "fields": {"amount": "data.value", "units": "data.units"},
-                },
-                {"kind": "medicine", "when": {"data.type": "medicine"}, "fields": {"medicine": "data.name"}},
-            ]
-        }
-    }
-    mapper, report = Mapper("UTC", options), Report()
-    rows = [record("same", "school_health", {"type": "temperature", "value": 37, "units": "C"})]
-    temp = mapper.map(rows, "s", "kid", "child", report)[0]
-    med = mapper.map(
-        [record("same", "school_health", {"type": "medicine", "name": "Vitamin"})],
+@pytest.mark.parametrize(
+    "kind", ["potty", "temperature", "medicine", "growth", "nursing", "pump", "activity"]
+)
+def test_unsupported_types_do_not_block_diapers(kind):
+    report = Report()
+    events = Mapper("UTC").map(
+        [
+            record("unsupported", kind + "_activity", {"value": 37}),
+            record("diaper", "bathroom_activity", {"type": "Diaper", "sub_type": "Wet"}),
+        ],
         "s",
         "kid",
         "child",
-        Report(),
-    )[0]
-    assert temp.kind == "temperature" and med.kind == "medicine"
-    assert temp.source_key == med.source_key
-    assert not mapper.map(
-        [record("unknown", "school_health", {"type": "other"})], "s", "kid", "child", report
+        report,
     )
-    assert report.counts["skipped"] == 1
+    assert [event.kind for event in events] == ["diaper"]
+    assert report.reasons["unsupported activity type"] == 1
 
 
-def test_zero_duration_activity_is_a_valid_recorded_event():
-    options = {
-        "source_rules": {
-            "school_play": {
-                "kind": "activity",
-                "fields": {"duration": "data.seconds"},
-                "constants": {"mode": "storyTime"},
-            }
-        }
-    }
+def test_obsolete_custom_rules_fail_clearly():
+    with pytest.raises(MappingError, match="no longer supported"):
+        Mapper("UTC", {"source_rules": {"anything": {"kind": "temperature"}}})
+
+
+def test_potty_is_not_imported_as_diaper():
     report = Report()
-    events = Mapper("UTC", options).map(
-        [record("zero", "school_play", {"seconds": 0})], "s", "kid", "child", report
+    assert not Mapper("UTC").map(
+        [record(kind="bathroom_activity", data={"type": "Potty", "sub_type": "Wet"})],
+        "s",
+        "kid",
+        "child",
+        report,
     )
-    assert len(events) == 1 and events[0].end == events[0].start
+    assert report.reasons["potty records are not supported"] == 1

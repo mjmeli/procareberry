@@ -23,8 +23,7 @@ async def check(directory, mode):
                 print("Container restart retained tracking state")
                 return
             db = DB()
-            timer = {"tummyTime": {"active": True, "paused": False, "uuid": "0123456789abcdef"}}
-            db.write("activities/child", {"prefs": {}, "timer": timer})
+            db.write("feed/child", {"prefs": {}})
             api = HistoricalAPI("synthetic", "synthetic", "UTC", None)
 
             async def client():
@@ -34,10 +33,10 @@ async def check(directory, mode):
             destination = Huckleberry(api, "UTC")
             event = Event(
                 "smoke",
-                "activity",
+                "bottle",
                 "child",
                 datetime.fromisoformat("2026-10-16T10:00:00+00:00"),
-                values={"mode": "tummyTime", "duration": 60},
+                values={"amount": 4, "bottle_type": "Formula", "units": "oz"},
             )
             writes = db.write_count
             preview = Report()
@@ -46,8 +45,7 @@ async def check(directory, mode):
             report = Report()
             await Synchronizer(destination, ledger, write=True).sync(event, report)
             assert report.counts["created"] == 1
-            assert db.data["activities/child"]["timer"] == timer
-            print("Container preview, import and timer checks passed")
+            print("Container preview and import checks passed")
         finally:
             ledger.close()
 

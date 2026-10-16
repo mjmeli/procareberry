@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock
 from zoneinfo import ZoneInfo
 
 import pytest
-from huckleberry_api.firebase_types import FirebaseMedicationTypeDocument
 
 from procareberry.huckleberry import HistoricalAPI, Huckleberry
 from procareberry.models import Event
@@ -15,7 +14,7 @@ from .fakes import DB
 @pytest.fixture
 def db():
     db = DB()
-    for name in ("sleep", "feed", "diaper", "health", "pump", "activities"):
+    for name in ("sleep", "feed", "diaper"):
         db.write(name + "/child", {"prefs": {}})
     return db
 
@@ -26,11 +25,6 @@ def destination(db):
     api._get_firestore_client = AsyncMock(return_value=db)
     api.list_solids_curated_foods = AsyncMock(return_value=[SimpleNamespace(id="banana", name="Banana")])
     api.list_solids_custom_foods = AsyncMock(return_value=[])
-    api.list_medicine_types = AsyncMock(
-        return_value=[
-            FirebaseMedicationTypeDocument(_id="vitamin", active=True, mode="medication", name="Vitamin")
-        ]
-    )
     return Huckleberry(api, "America/New_York")
 
 

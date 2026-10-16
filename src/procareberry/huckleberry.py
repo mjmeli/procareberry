@@ -3,7 +3,6 @@
 import contextvars
 import time
 import uuid
-from dataclasses import replace
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -13,7 +12,7 @@ from huckleberry_api import HuckleberryAPI
 from huckleberry_api import firebase_types as ft
 from huckleberry_api.models import SolidsFoodReference
 
-from .mapping import ACTIVITY_MODES, number
+from .mapping import number
 from .models import Event, MappingError, Prepared, Record, SyncError
 from .storage import private_json, read_json
 
@@ -21,58 +20,24 @@ _historical_time = contextvars.ContextVar("procareberry_historical_time", defaul
 LOCATIONS = {
     "sleep": ("sleep", "intervals"),
     "bottle": ("feed", "intervals"),
-    "nursing": ("feed", "intervals"),
     "solids": ("feed", "intervals"),
     "diaper": ("diaper", "intervals"),
-    "potty": ("diaper", "intervals"),
-    "temperature": ("health", "data"),
-    "medicine": ("health", "data"),
-    "growth": ("health", "data"),
-    "pump": ("pump", "intervals"),
-    "activity": ("activities", "intervals"),
 }
 MODELS = {
     "sleep": ft.FirebaseSleepIntervalData,
     "bottle": ft.FirebaseBottleFeedIntervalData,
-    "nursing": ft.FirebaseBreastFeedIntervalData,
     "solids": ft.FirebaseSolidsFeedIntervalData,
     "diaper": ft.FirebaseDiaperData,
-    "potty": ft.FirebaseDiaperData,
-    "temperature": ft.FirebaseTemperatureData,
-    "medicine": ft.FirebaseMedicationData,
-    "growth": ft.FirebaseGrowthData,
-    "pump": ft.FirebasePumpIntervalData,
-    "activity": ft.FirebaseActivityIntervalData,
 }
 MODES = {
     "bottle": "bottle",
-    "nursing": "breast",
     "solids": "solids",
-    "medicine": "medication",
-    "temperature": "temperature",
-    "growth": "growth",
 }
 LAST_FIELDS = {
     "sleep": "lastSleep",
     "bottle": "lastBottle",
-    "nursing": "lastNursing",
     "solids": "lastSolid",
     "diaper": "lastDiaper",
-    "potty": "lastPotty",
-    "temperature": "lastTemperature",
-    "medicine": "lastMedication",
-    "growth": "lastGrowthEntry",
-    "pump": "lastPump",
-}
-LAST_ACTIVITIES = {
-    "bath": "lastBath",
-    "brushTeeth": "lastBrushTeeth",
-    "indoorPlay": "lastIndoorPlay",
-    "outdoorPlay": "lastOutdoorPlay",
-    "screenTime": "lastScreenTime",
-    "skinToSkin": "lastSkinToSkin",
-    "storyTime": "lastStoryTime",
-    "tummyTime": "lastTummyTime",
 }
 
 
@@ -91,7 +56,7 @@ class HistoricalAPI(HuckleberryAPI):
 class Huckleberry:
     def __init__(self, api, timezone_name, options=None):
         self.api, self.tz, self.options = api, ZoneInfo(timezone_name), options or {}
-        self.food_catalog, self.medicine_catalog = {}, {}
+        self.food_catalog = {}
 
     async def authenticate(self, token_file):
         saved = read_json(token_file)
@@ -149,22 +114,6 @@ class Huckleberry:
             raise MappingError("duplicate food references in one meal")
         return refs
 
-    async def _medicine(self, child, name):
-        if not isinstance(name, str) or not name.strip():
-            raise MappingError("medicine name required")
-        if child not in self.medicine_catalog:
-            self.medicine_catalog[child] = await self.api.list_medicine_types(child)
-        configured = self.options.get("medicines", {}).get(name)
-        matches = [
-            m
-            for m in self.medicine_catalog[child]
-            if m.active
-            and (m.id_ == configured if configured else m.name.casefold() == name.strip().casefold())
-        ]
-        if len(matches) != 1:
-            raise MappingError("medicine needs one exact catalog match or an explicit medicines mapping")
-        return matches[0]
-
     async def prepare(self, event: Event) -> Prepared:
         values = dict(event.values)
         notes = values.pop("notes", "")
@@ -174,15 +123,6 @@ class Huckleberry:
         base = {"start": start, "offset": offset(event.start)}
         args = {"start_time": event.start}
         kind = event.kind
-        if kind in {"activity", "pump"}:
-            if event.end:
-                duration = event.end.timestamp() - event.start.timestamp()
-                if "duration" in values and number(values["duration"], "duration") != duration:
-                    raise MappingError("duration does not match recorded interval")
-                values["duration"] = duration
-            elif "duration" in values:
-                end_timestamp = start + number(values["duration"], "duration")
-                event = replace(event, end=datetime.fromtimestamp(end_timestamp, self.tz))
         try:
             if kind == "sleep":
                 if not event.end:
@@ -225,7 +165,7 @@ class Huckleberry:
                 if "reaction" in values:
                     base["reactions"] = {values["reaction"]: True}
                     args["reaction"] = values["reaction"]
-            elif kind in {"diaper", "potty"}:
+            elif kind == "diaper":
                 allowed = {
                     "mode",
                     "pee_amount",
@@ -233,9 +173,8 @@ class Huckleberry:
                     "color",
                     "consistency",
                     "diaper_rash",
-                    "how_it_happened",
                 }
-                if set(values) - allowed or kind == "diaper" and "how_it_happened" in values:
+                if set(values) - allowed:
                     raise MappingError("unsupported bathroom field")
                 base.update(mode=values["mode"])
                 if notes:
@@ -251,138 +190,11 @@ class Huckleberry:
                 }
                 if quantity:
                     base["quantity"] = quantity
-                if kind == "potty":
-                    base.update(isPotty=True, howItHappened=values["how_it_happened"])
-                    if "diaper_rash" in values:
-                        raise MappingError("potty does not support diaper rash")
-                else:
-                    if "diaper_rash" in values and not isinstance(values["diaper_rash"], bool):
-                        raise MappingError("diaper_rash must be boolean")
-                    if values.get("diaper_rash"):
-                        base["diaperRash"] = True
+                if "diaper_rash" in values and not isinstance(values["diaper_rash"], bool):
+                    raise MappingError("diaper_rash must be boolean")
+                if values.get("diaper_rash"):
+                    base["diaperRash"] = True
                 args.update(values, notes=notes)
-            elif kind == "temperature":
-                if set(values) - {"amount", "units"}:
-                    raise MappingError("unsupported temperature field")
-                base.update(
-                    mode="temperature",
-                    amount=number(values["amount"], "temperature"),
-                    units=values["units"],
-                    notes=notes,
-                    lastUpdated=0,
-                )
-                args.update(amount=base["amount"], units=base["units"], notes=notes)
-            elif kind == "medicine":
-                if set(values) - {"medicine", "amount", "units"}:
-                    raise MappingError("unsupported medicine field")
-                medicine = await self._medicine(event.child_uid, values["medicine"])
-                if "amount" in values and "units" not in values:
-                    raise MappingError("medicine amount requires units")
-                base.update(
-                    mode="medication",
-                    medication_id=medicine.id_,
-                    medication_name=medicine.name,
-                    amount=number(values["amount"], "medicine amount") if "amount" in values else 0,
-                    notes=notes,
-                )
-                if "units" in values:
-                    base["units"] = values["units"]
-                args.update(
-                    medicine_type=medicine,
-                    notes=notes,
-                    **{k: values[k] for k in ("amount", "units") if k in values},
-                )
-            elif kind == "growth":
-                if set(values) - {"weight", "height", "head", "units"}:
-                    raise MappingError("unsupported growth field")
-                units = values["units"]
-                if units not in {"metric", "imperial"}:
-                    raise MappingError("growth units must be metric or imperial")
-                base["mode"] = "growth"
-                unit_map = (
-                    {"weight": "kg", "height": "cm", "head": "hcm"}
-                    if units == "metric"
-                    else {"weight": "lbs.oz", "height": "ft.in", "head": "hin"}
-                )
-                for name, unit in unit_map.items():
-                    if name in values:
-                        base[name] = number(values[name], name, positive=True)
-                        base[name + "Units"] = unit
-                if len(base) == 3:
-                    raise MappingError("growth requires a measurement")
-                if notes:
-                    raise MappingError("Huckleberry growth entries do not support notes")
-                args.update(values)
-            elif kind == "nursing":
-                if set(values) - {"side", "left_duration", "right_duration"} or not event.end:
-                    raise MappingError("nursing requires end time and supported side/durations")
-                side = values["side"]
-                if side not in {"left", "right"}:
-                    raise MappingError("nursing side must be explicit")
-                if ("left_duration" in values) != ("right_duration" in values):
-                    raise MappingError("provide both nursing side durations")
-                duration = event.end.timestamp() - start
-                left = (
-                    number(values["left_duration"], "left duration")
-                    if "left_duration" in values
-                    else duration
-                    if side == "left"
-                    else 0
-                )
-                right = (
-                    number(values["right_duration"], "right duration")
-                    if "right_duration" in values
-                    else duration
-                    if side == "right"
-                    else 0
-                )
-                if abs(left + right - duration) > 1:
-                    raise MappingError("nursing durations do not match its recorded interval")
-                base.update(
-                    mode="breast",
-                    lastSide=side,
-                    leftDuration=left,
-                    rightDuration=right,
-                    end_offset=offset(event.end),
-                )
-                if notes:
-                    base["notes"] = notes
-                args.update(end_time=event.end, side=side, left_duration=left, right_duration=right)
-            elif kind == "pump":
-                if set(values) - {"units", "total_amount", "left_amount", "right_amount", "duration"}:
-                    raise MappingError("unsupported pumping field")
-                base["units"] = values["units"]
-                if "total_amount" in values and not ({"left_amount", "right_amount"} & values.keys()):
-                    total = number(values["total_amount"], "pump amount")
-                    base.update(entryMode="total", leftAmount=total / 2, rightAmount=total / 2)
-                elif "total_amount" not in values and {"left_amount", "right_amount"} <= values.keys():
-                    base.update(
-                        entryMode="leftright",
-                        leftAmount=number(values["left_amount"], "left amount"),
-                        rightAmount=number(values["right_amount"], "right amount"),
-                    )
-                else:
-                    raise MappingError("pump needs a total or both side amounts")
-                if "duration" in values:
-                    base.update(
-                        duration=number(values["duration"], "pump duration"),
-                        end_offset=offset(event.end or event.start),
-                    )
-                base["notes"] = notes
-                args.update(values, notes=notes)
-            elif kind == "activity":
-                if set(values) - {"mode", "duration"}:
-                    raise MappingError("unsupported activity field")
-                mode = values["mode"]
-                if mode not in ACTIVITY_MODES:
-                    raise MappingError("unknown Huckleberry activity mode")
-                base.update(mode=mode, notes=notes)
-                if "duration" in values:
-                    base.update(
-                        duration=number(values["duration"], "activity duration"),
-                        end_offset=offset(event.end or event.start),
-                    )
-                args.update(mode=mode, duration=base.get("duration"), notes=notes)
             else:
                 raise MappingError("unsupported destination category")
             model = MODELS[kind].model_validate(base)
@@ -430,11 +242,7 @@ class Huckleberry:
                         raise SyncError("Huckleberry returned an unreadable history entry")
                     if event.kind in MODES and payload.get("mode") != MODES[event.kind]:
                         continue
-                    if event.kind in {"diaper", "potty"} and bool(payload.get("isPotty")) != (
-                        event.kind == "potty"
-                    ):
-                        continue
-                    if event.kind == "activity" and payload.get("mode") != prepared.payload["mode"]:
+                    if event.kind == "diaper" and payload.get("isPotty"):
                         continue
                     model = MODELS[event.kind].model_validate(payload)
                     when = float(model.start)
@@ -470,9 +278,7 @@ class Huckleberry:
         kind, args = prepared.event.kind, dict(prepared.kwargs)
         token = _historical_time.set(prepared.event.start)
         try:
-            if kind == "activity":
-                await self.api._log_activity(prepared.event.child_uid, **args, update_timer=False)
-            elif kind == "bottle" and args.get("amount") is None:
+            if kind == "bottle" and args.get("amount") is None:
                 # The destination supports blank volume, but the convenience method doesn't.
                 await self._blank_bottle(prepared)
             else:
@@ -481,12 +287,6 @@ class Huckleberry:
                     "bottle": "log_bottle",
                     "solids": "log_solids",
                     "diaper": "log_diaper",
-                    "potty": "log_potty",
-                    "temperature": "log_temperature",
-                    "medicine": "log_medicine",
-                    "growth": "log_growth",
-                    "nursing": "log_nursing",
-                    "pump": "log_pump",
                 }[kind]
                 await getattr(self.api, method)(prepared.event.child_uid, **args)
         finally:
@@ -538,11 +338,7 @@ class Huckleberry:
         root = client.collection(LOCATIONS[prepared.event.kind][0]).document(prepared.event.child_uid)
         parent = await root.get()
         parent_raw = parent.to_dict() or {}
-        last_field = (
-            LAST_ACTIVITIES[prepared.payload["mode"]]
-            if prepared.event.kind == "activity"
-            else LAST_FIELDS[prepared.event.kind]
-        )
+        last_field = LAST_FIELDS[prepared.event.kind]
         last = (parent_raw.get("prefs") or {}).get(last_field) or {}
         # Correct a summary only when it clearly points at this old entry and is not moving before another event.
         summary_changes = {}
@@ -561,15 +357,6 @@ class Huckleberry:
                     if last[summary_key] != old_value:
                         raise SyncError("Latest-event summary was edited; review the correction manually")
                     summary_changes[f"prefs.{last_field}.{summary_key}"] = value
-            if prepared.event.kind == "nursing" and "duration" in last:
-                old_duration = previous.payload.get("leftDuration", 0) + previous.payload.get(
-                    "rightDuration", 0
-                )
-                if last["duration"] != old_duration:
-                    raise SyncError("Latest nursing duration was edited; review the correction manually")
-                summary_changes[f"prefs.{last_field}.duration"] = payload.get(
-                    "leftDuration", 0
-                ) + payload.get("rightDuration", 0)
         batch = client.batch()
         # set with a version precondition is unavailable; use update plus field deletions.
         from google.cloud.firestore_v1 import DELETE_FIELD

@@ -75,4 +75,4 @@ def test_cli_help_and_old_backfill_need_no_credentials(tmp_path):
 def test_example_mapping_is_valid_json_and_does_not_enable_unverified_rules():
     root = Path(__file__).parents[1]
     options = json.loads((root / "mappings.example.json").read_text())
-    assert options["source_rules"] == {}
+    assert set(options) == {"bottle_types", "meal_descriptions", "foods"}

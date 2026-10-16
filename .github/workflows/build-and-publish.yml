@@ -72,7 +72,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           load: true
-      - name: Verify runtime, timer preservation and state persistence
+      - name: Verify runtime and state persistence
         run: |
           image="procareberry:check"
           docker run --rm "$image" --help

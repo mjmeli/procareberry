@@ -6,21 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-KINDS = frozenset(
-    {
-        "sleep",
-        "bottle",
-        "solids",
-        "diaper",
-        "potty",
-        "temperature",
-        "medicine",
-        "growth",
-        "nursing",
-        "pump",
-        "activity",
-    }
-)
+KINDS = frozenset({"sleep", "bottle", "solids", "diaper"})
 
 
 class SyncError(Exception):
