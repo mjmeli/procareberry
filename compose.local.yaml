@@ -1,0 +1,4 @@
+services:
+  procareberry:
+    image: procareberry:local
+    build: .

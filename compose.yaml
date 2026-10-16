@@ -1,0 +1,24 @@
+services:
+  procareberry:
+    image: ghcr.io/mjmeli/procareberry:latest
+    restart: unless-stopped
+    environment:
+      PROCARE_EMAIL: ${PROCARE_EMAIL:?Set PROCARE_EMAIL}
+      PROCARE_PASSWORD: ${PROCARE_PASSWORD:?Set PROCARE_PASSWORD}
+      HUCKLEBERRY_EMAIL: ${HUCKLEBERRY_EMAIL:?Set HUCKLEBERRY_EMAIL}
+      HUCKLEBERRY_PASSWORD: ${HUCKLEBERRY_PASSWORD:?Set HUCKLEBERRY_PASSWORD}
+      WRITE_ENABLED: ${WRITE_ENABLED:-false}
+      TZ: ${TZ:-America/New_York}
+      CHILD_UID_MAP: ${CHILD_UID_MAP:-{}}
+      INTERVAL_MINUTES: ${INTERVAL_MINUTES:-15}
+      HEALTH_MAX_AGE_HOURS: ${HEALTH_MAX_AGE_HOURS:-36}
+      SYNC_CATEGORIES: ${SYNC_CATEGORIES:-sleep,bottle,solids,diaper,potty,temperature,medicine,growth,nursing,pump,activity}
+      MAPPING_FILE: /config/mappings.json
+    volumes:
+      - ./data:/data
+      - ./config:/config:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "3"

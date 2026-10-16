@@ -1,0 +1,43 @@
+{
+  "bottle_types": {
+    "YOUR EXACT FORMULA DESCRIPTION": "Formula",
+    "YOUR EXACT BREAST MILK DESCRIPTION": "Breast Milk"
+  },
+  "meal_descriptions": {},
+  "foods": {},
+  "medicines": {},
+  "source_rules": {},
+  "example_rules_do_not_enable_without_verifying_payloads": {
+    "school_temperature_type": {
+      "kind": "temperature",
+      "fields": {"amount": "data.value", "units": "data.unit", "notes": "comment"},
+      "values": {"units": {"Celsius": "C", "Fahrenheit": "F"}}
+    },
+    "school_potty_type": {
+      "kind": "potty",
+      "fields": {"mode": "data.result", "how_it_happened": "data.outcome", "notes": "comment"},
+      "values": {"mode": {"wet": "pee", "BM": "poo", "both": "both", "dry": "dry"}, "how_it_happened": {"success": "wentPotty", "dry": "satButDry", "accident": "accident"}}
+    },
+    "school_medicine_type": {
+      "kind": "medicine",
+      "fields": {"medicine": "data.name", "amount": "data.amount", "units": "data.units", "notes": "comment"}
+    },
+    "school_growth_type": {
+      "kind": "growth",
+      "fields": {"weight": "data.weight", "height": "data.height", "head": "data.head", "units": "data.units"}
+    },
+    "school_nursing_type": {
+      "kind": "nursing",
+      "fields": {"start_time": "data.start", "end_time": "data.end", "side": "data.side", "left_duration": "data.left_seconds", "right_duration": "data.right_seconds", "notes": "comment"}
+    },
+    "school_pump_type": {
+      "kind": "pump",
+      "fields": {"total_amount": "data.amount", "units": "data.units", "duration": "data.seconds", "notes": "comment"}
+    },
+    "school_play_type": {
+      "kind": "activity",
+      "fields": {"mode": "data.type", "duration": "data.seconds", "notes": "comment"},
+      "values": {"mode": {"Tummy time": "tummyTime", "Story time": "storyTime"}}
+    }
+  }
+}
