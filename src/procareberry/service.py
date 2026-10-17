@@ -16,6 +16,17 @@ from .storage import Ledger, private_json, read_json
 LOG = logging.getLogger("procareberry")
 
 
+def log_event(action, event):
+    LOG.info(
+        "%s %s entry: source=%s start=%s%s",
+        action,
+        event.kind,
+        event.source_key[:12],
+        event.start.isoformat(),
+        f" end={event.end.isoformat()}" if event.end else "",
+    )
+
+
 def serialize(event):
     return {
         "source_key": event.source_key,
@@ -50,7 +61,7 @@ class Synchronizer:
             event.source_key, event.start.date().isoformat(), state, signature or event.signature, body
         )
 
-    async def _reconcile(self, row, report):
+    async def _reconcile(self, row, report, *, action="Recovered"):
         body = row["body"]
         event = deserialize(body["event"])
         prepared = Prepared(event, body["payload"], {})
@@ -81,6 +92,7 @@ class Synchronizer:
             row["signature"],
         )
         report.add("recovered")
+        log_event(action, event)
         return self.ledger.get(event.source_key)
 
     async def sync(self, event, report):
@@ -133,6 +145,7 @@ class Synchronizer:
                     },
                 )
                 report.add("updated")
+                log_event("Updated", event)
                 return
             prepared = await self.destination.prepare(event)
             before = await self.destination.scan(prepared)
@@ -157,7 +170,7 @@ class Synchronizer:
             }
             self._put(event, "pending", body)
             await self.destination.log(prepared)
-            recovered = await self._reconcile(self.ledger.get(event.source_key), report)
+            recovered = await self._reconcile(self.ledger.get(event.source_key), report, action="Created")
             if recovered:
                 report.counts["recovered"] -= 1
                 report.add("created")
@@ -251,6 +264,7 @@ async def run_window(settings, start, end, *, preview=None, now=None):
                 "counts": report.counts,
                 "reasons": report.reasons,
                 "source_types": report.source_types,
+                "ignored_types": report.ignored_types,
                 "ledger": ledger.counts(),
             }
             private_json(settings.data_dir / "status.json", result)

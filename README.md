@@ -45,7 +45,7 @@ Unsupported or unclear activities are skipped and reported while other imports c
    docker compose run --rm procareberry once --dry-run
    ```
 
-   The preview includes proposed times and record contents. Treat its terminal output as private. Routine service logs contain only counts and reasons.
+   The preview includes proposed times and record contents. Treat its terminal output as private. Routine logs show created, updated, and recovered entries with their category, event times, and a short source reference, plus sync totals, ignored counts by activity type, and reasons for skipped entries. Notes, record contents, and child IDs are omitted.
 
 4. After checking the preview against both apps, set `WRITE_ENABLED=true` in `.env` and start:
 
