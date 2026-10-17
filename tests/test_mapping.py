@@ -131,3 +131,43 @@ def test_potty_is_not_imported_as_diaper():
         report,
     )
     assert report.reasons["potty records are not supported"] == 1
+
+
+@pytest.mark.parametrize(
+    "description,expected",
+    [
+        ("Formula", "Formula"),
+        (" formula ", "Formula"),
+        ("BREAST MILK", "Breast Milk"),
+        ("Cow Milk", "Cow Milk"),
+        ("Goat Milk", "Goat Milk"),
+        ("Soy Milk", "Soy Milk"),
+        ("Tube Feeding", "Tube Feeding"),
+        ("Other", "Other"),
+    ],
+)
+def test_bottle_labels_map_without_configuration(description, expected):
+    events = Mapper("UTC").map(
+        [record(kind="bottle_activity", data={"amount": 4, "desc": description})],
+        "s",
+        "kid",
+        "child",
+        Report(),
+    )
+    assert events[0].values["bottle_type"] == expected
+
+
+def test_explicit_bottle_override_takes_precedence():
+    events = Mapper("UTC", {"bottle_types": {"Formula": "Other"}}).map(
+        [record(kind="bottle_activity", data={"desc": "Formula"})], "s", "kid", "child", Report()
+    )
+    assert events[0].values["bottle_type"] == "Other"
+
+
+@pytest.mark.parametrize("description", [None, "", "Milk", "Formula and breast milk", {"invalid": True}])
+def test_ambiguous_bottle_labels_are_not_guessed(description):
+    report = Report()
+    assert not Mapper("UTC").map(
+        [record(kind="bottle_activity", data={"desc": description})], "s", "kid", "child", report
+    )
+    assert report.counts["skipped"] == 1

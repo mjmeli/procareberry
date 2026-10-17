@@ -4,7 +4,10 @@ import math
 import re
 from dataclasses import replace
 from datetime import datetime, timezone
+from typing import get_args
 from zoneinfo import ZoneInfo
+
+from huckleberry_api.firebase_types import BottleType
 
 from .models import Event, MappingError, Report, fingerprint
 
@@ -19,6 +22,8 @@ IGNORED = frozenset(
         "name_to_face_activity",
     }
 )
+BOTTLE_TYPES = {name.casefold(): name for name in get_args(BottleType)}
+
 DIAPERS = {
     "wet": "pee",
     "pee": "pee",
@@ -104,7 +109,11 @@ class Mapper:
         if atype == "bottle_activity":
             event = self._base(raw, context, source_child, child_uid, "bottle")
             description = data.get("desc")
+            if not isinstance(description, str):
+                raise MappingError("missing bottle description")
             bottle_type = self.options.get("bottle_types", {}).get(description)
+            if bottle_type is None:
+                bottle_type = BOTTLE_TYPES.get(description.strip().casefold())
             if not bottle_type:
                 raise MappingError("bottle description needs an explicit bottle_types mapping")
             # The supported parent feed reports bottle amounts in ounces.

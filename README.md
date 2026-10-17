@@ -9,7 +9,7 @@ Sync recorded Procare daycare activities to Huckleberry. Procareberry runs local
 | Huckleberry record | Procare mapping | Requirements |
 | --- | --- | --- |
 | Sleep | Built-in `nap_activity` | Start and end times; uniquely pairable split records are supported |
-| Bottle | Built-in `bottle_activity` | Explicit description-to-milk-type configuration; feed amounts are ounces; blank volume stays blank |
+| Bottle | Built-in `bottle_activity` | Recognized milk labels map automatically; custom descriptions need an override; amounts are ounces; blank volume stays blank |
 | Diaper | Built-in `bathroom_activity` | Explicit diaper type and recognized wet/BM/both/dry subtype |
 | Solids | Built-in `meal_activity` | Food description must exactly match one catalog item or an explicitly configured meal description |
 
@@ -18,7 +18,7 @@ Unknown types and missing/ambiguous values are reported without stopping other e
 ## Docker quick start
 
 1. Copy `.env.example` to `.env` and fill in both accounts' email/password credentials.
-2. Create `config/`, copy `mappings.example.json` to `config/mappings.json`, and edit it for your daycare. Replace the sample milk descriptions with your school's exact descriptions.
+2. Mapping configuration is optional. For custom bottle descriptions or meal/food overrides, copy `mappings.example.json` to `config/mappings.json`, edit it, and set `MAPPING_FILE=/config/mappings.json` in `.env`.
 3. List child IDs if either account has multiple children:
 
    ```sh
@@ -62,7 +62,7 @@ procareberry healthcheck
 
 ## Mapping configuration
 
-`MAPPING_FILE` points at a JSON file. Built-in bottle mappings use `bottle_types` to map the exact Procare description to a Huckleberry milk type. `meal_descriptions` can map an exact meal description to a list of actual foods; optional portions must come from known data or explicit configuration.
+`MAPPING_FILE` optionally points at a JSON file. Bottle descriptions matching Huckleberry labels (`Breast Milk`, `Formula`, `Tube Feeding`, `Cow Milk`, `Goat Milk`, `Soy Milk`, or `Other`) map automatically, ignoring capitalization and surrounding whitespace. Unknown or missing descriptions are skipped rather than assigned a milk type. Use `bottle_types` only to override an exact Procare description, such as a daycare-specific label. `meal_descriptions` can map an exact meal description to a list of actual foods; optional portions must come from known data or explicit configuration.
 
 `foods` selects a specific existing food ID and catalog (`curated` or `custom`) when names are ambiguous. No food catalog items are created by the sync, including in write mode.
 
