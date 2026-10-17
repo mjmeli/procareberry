@@ -78,7 +78,7 @@ Bottle descriptions matching Huckleberry labels (`Breast Milk`, `Formula`, `Tube
 
 Each meal description is matched as a single food name against Huckleberry's existing curated and custom catalogs, ignoring capitalization and surrounding whitespace. A meal is imported when exactly one catalog item matches. Unknown or ambiguous names are skipped, and the recorded quantity is preserved in notes.
 
-All events require a stable source `id` and `activity_time`. Source comments are preserved. Ambiguous local timestamps during a daylight-saving transition require a source UTC offset.
+Activity comments are preserved in Huckleberry notes.
 
 ## Configuration
 
