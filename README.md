@@ -1,8 +1,21 @@
 # Procareberry
 
-Sync recorded Procare daycare activities to Huckleberry. Procareberry runs locally or in Docker, previews changes by default, and tracks imports for 90 days so ordinary reruns do not duplicate records.
+Parents who use Procare for daycare updates and Huckleberry for daily tracking otherwise have to enter the same activities in both apps. Procareberry automates that handoff by checking Procare's recorded activities and preparing matching entries in Huckleberry.
 
-**Status:** initial release. Offline tests exercise the pinned Huckleberry client against a simulated database. A live Procare preview must be reviewed before enabling writes. Procare and Huckleberry access is unofficial and can change.
+Procareberry can:
+
+- **Automatic daycare sync:** Check every 15 minutes for recorded sleep, bottles, diapers, and solids.
+- **Safe preview:** Review proposed entries before writing. Procareberry starts with writes disabled and checks for existing Huckleberry entries.
+- **Daycare corrections:** Update entries when daycare changes an activity, while respecting your manual edits and deletions.
+- **Recent history:** Import missed activities with a backfill covering up to the past 90 days.
+- **Multiple children:** Pair children across your Procare and Huckleberry accounts.
+- **Local or Docker setup:** Run on your own machine, with sync history kept locally for 90 days to prevent duplicate imports on ordinary reruns.
+
+Review a preview against both apps before enabling writes. Procareberry never writes to Huckleberry until you opt in. Procare and Huckleberry access is unofficial and can change.
+
+## AI disclosure
+
+Procareberry was developed primarily with assistance from OpenAI Codex. I review and maintain the project. Automated tests use simulated account data; review a live preview with your own accounts before enabling writes.
 
 ## What gets synced
 
@@ -85,15 +98,29 @@ Procare verification-code and SSO login flows are not implemented. A missing tok
 
 ## Corrections, duplicates and storage
 
-Tracking uses stable Procare activity identities, not rounded timestamps. Distinct feeds/diapers remain distinct. Equivalent pre-existing entries are skipped without taking ownership. Existing sleep overlaps block imports rather than being trimmed or merged.
+### Duplicates and corrections
 
-Daycare corrections update only untouched entries created by Procareberry. A manual edit or deletion releases ownership for the remainder of the retained window. Source disappearance never deletes destination history. Changes in category, child mapping, or an ambiguous latest-event correction are reported for review.
+- Procareberry tracks each Procare activity separately, so two feeds or diapers close together stay separate.
+- Matching entries already in Huckleberry are skipped and left alone. Sleep records that overlap existing sleep are skipped for review.
+- Daycare corrections carry over only to entries Procareberry created that you have not edited. If you edit or delete an entry in Huckleberry, Procareberry leaves it alone for the rest of the 90-day tracking period.
+- Removing an activity from Procare never deletes it from Huckleberry. Changes to the activity category or child pairing, and corrections that cannot be matched confidently, are flagged for review.
 
-Import intent is saved before logging. When a request is interrupted, the next run checks for an unambiguous new matching destination entry. An unresolved result remains pending instead of being blindly retried. If a pending entry was deleted or edited before it could be identified, review it manually; repeated backfills intentionally do not bypass that protection.
+### Interrupted imports
 
-**Storage is bounded to 90 days of event tracking.** Older rows are pruned and SQLite is compacted weekly. Huckleberry entries remain. Backfills outside the retained window are rejected. Logs rotate at about 1 MB each with two backups. No media or full source-feed archive is retained. Tracking includes the last destination contents, so `/data` still contains private child information.
+If a connection drops during an import, Procareberry checks Huckleberry on the next run to see whether the entry was saved. If it cannot tell for sure, it marks the import as pending to avoid creating a duplicate.
 
-Run one writer per data directory; a file lock rejects a second process. Independent installations targeting the same child are not coordinated. Back up the complete `/data` directory while the service is stopped, and restore it together with the matching account configuration. Do not delete/reset the ledger to resolve an uncertain import: doing so loses edit/deletion protection. Incompatible or unreadable state is reported rather than silently discarded.
+Review pending imports manually, especially if you edited or deleted the entry before Procareberry could confirm it. Running another backfill will not force a pending import through.
+
+### Storage and backups
+
+Procareberry keeps **90 days of sync history** and automatically removes older tracking data. Your Huckleberry entries stay in place. Backfills are limited to the same 90-day window.
+
+- `/data` contains private child information used to track changes, along with account tokens and logs. Media and a full copy of the Procare feed are not stored.
+- Logs are limited to about 1 MB each, with two older copies kept.
+- Stop the service before backing up the entire `/data` directory. Restore it with the matching account configuration.
+- Keep the tracking data when troubleshooting. Deleting it removes the protection for entries you have edited or deleted. If saved data cannot be read, Procareberry reports the problem instead of resetting it.
+
+Run only one syncing instance per data directory; Procareberry blocks a second one. Separate installations do not coordinate, so avoid running them against the same child.
 
 ## Development and releases
 
@@ -105,6 +132,4 @@ uv run --locked ruff format --check .
 uv run --locked procareberry --help
 ```
 
-Direct dependencies are pinned and `uv.lock` locks transitive versions. The Huckleberry wrapper is tested against `huckleberry-api==0.4.8`; dependency upgrades must run the compatibility tests. No library fork or upstream change is required.
-
-GitHub Actions validates code and builds containers for pull requests without publishing. Pushes to `main` and `v*` tags publish GHCR images. Optional Docker Hub publishing requires `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets. CI never needs real account credentials.
+Container images are published to `ghcr.io/mjmeli/procareberry`: pushes to `main` update `latest`, and version tags such as `v1.2.3` publish `1.2.3`. Images also receive a `sha-` tag identifying the source commit.
