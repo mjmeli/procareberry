@@ -80,16 +80,12 @@ async def test_failed_ack_recovers_without_duplicate(destination, event, ledger,
     await Synchronizer(destination, ledger, write=True).sync(event(), report)
     assert ledger.get("event-1")["state"] == "owned"
     assert len([p for p in db.data if "/intervals/" in p]) == 1
-    assert caplog.messages == [
-        "Recovered bottle entry: source=event-1 start=2026-10-16T10:00:00-04:00"
-    ]
+    assert caplog.messages == ["Recovered bottle entry: source=event-1 start=2026-10-16T10:00:00-04:00"]
 
 
 async def test_created_log_has_sleep_times_without_private_contents(destination, event, ledger, caplog):
     caplog.set_level("INFO", logger="procareberry")
-    source = event(
-        "sleep", {"notes": "private comment"}, end="2026-10-16T11:00:00-04:00", key="a" * 64
-    )
+    source = event("sleep", {"notes": "private comment"}, end="2026-10-16T11:00:00-04:00", key="a" * 64)
     await Synchronizer(destination, ledger, write=True).sync(source, Report())
     assert caplog.messages == [
         "Created sleep entry: source=aaaaaaaaaaaa "
