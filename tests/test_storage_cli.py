@@ -1,8 +1,6 @@
-import json
 import subprocess
 import sys
 from datetime import date, datetime, timedelta
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -70,9 +68,3 @@ def test_cli_help_and_old_backfill_need_no_credentials(tmp_path):
     )
     assert old.returncode == 1 and "90" in old.stderr
     assert not list(tmp_path.iterdir())
-
-
-def test_example_mapping_is_valid_json_and_does_not_enable_unverified_rules():
-    root = Path(__file__).parents[1]
-    options = json.loads((root / "mappings.example.json").read_text())
-    assert set(options) == {"bottle_types", "meal_descriptions", "foods"}

@@ -68,7 +68,7 @@ def print_preview(event, action, payload):
 
 
 async def list_children(settings):
-    async def inspect(source, destination, options):
+    async def inspect(source, destination):
         kids = await source.children()
         return {
             "procare": [

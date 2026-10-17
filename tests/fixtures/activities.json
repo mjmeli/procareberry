@@ -1,6 +1,6 @@
 [
   {"id": "nap-1", "kid_id": "kid", "activity_type": "nap_activity", "activity_time": "2026-10-16T10:00:00-04:00", "data": {"start_time": "2026-10-16T10:00:00-04:00", "end_time": "2026-10-16T11:00:00-04:00"}, "comment": "Synthetic nap"},
-  {"id": "bottle-1", "kid_id": "kid", "activity_type": "bottle_activity", "activity_time": "2026-10-16T09:00:00-04:00", "data": {"amount": "4", "desc": "Synthetic formula"}},
+  {"id": "bottle-1", "kid_id": "kid", "activity_type": "bottle_activity", "activity_time": "2026-10-16T09:00:00-04:00", "data": {"amount": "4", "desc": "Formula"}},
   {"id": "diaper-1", "kid_id": "kid", "activity_type": "bathroom_activity", "activity_time": "2026-10-16T09:30:00-04:00", "data": {"type": "Diaper", "sub_type": "BM & Wet"}},
   {"id": "meal-1", "kid_id": "kid", "activity_type": "meal_activity", "activity_time": "2026-10-16T12:00:00-04:00", "data": {"type": "Lunch", "desc": "Banana", "quantity": "Some"}},
   {"id": "photo-1", "activity_type": "photo_activity", "activity_time": "2026-10-16T12:00:00-04:00"},

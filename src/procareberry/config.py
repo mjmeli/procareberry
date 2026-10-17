@@ -21,7 +21,6 @@ class Settings:
     huckleberry_password: str = field(default="", repr=False)
     child_map: dict[str, str] = field(default_factory=dict)
     categories: frozenset[str] = KINDS
-    mapping_file: Path | None = None
     interval_minutes: int = 15
     health_max_age_hours: int = 36
 
@@ -59,7 +58,6 @@ class Settings:
                 write_enabled=enabled == "true",
                 child_map=mapping,
                 categories=kinds,
-                mapping_file=Path(os.environ["MAPPING_FILE"]) if os.getenv("MAPPING_FILE") else None,
                 interval_minutes=interval,
                 health_max_age_hours=age,
                 procare_email=os.getenv("PROCARE_EMAIL", ""),

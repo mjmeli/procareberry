@@ -20,9 +20,7 @@ def record(identifier="nap", kind="nap_activity", data=None, child="kid"):
 def test_default_payload_shapes():
     records = json.loads((Path(__file__).parent / "fixtures/activities.json").read_text())
     report = Report()
-    events = Mapper("America/New_York", {"bottle_types": {"Synthetic formula": "Formula"}}).map(
-        records, "school", "kid", "child", report
-    )
+    events = Mapper("America/New_York").map(records, "school", "kid", "child", report)
     assert {e.kind for e in events} == {"sleep", "bottle", "diaper", "solids"}
     assert next(e for e in events if e.kind == "bottle").values["amount"] == 4
     assert next(e for e in events if e.kind == "diaper").values["mode"] == "both"
@@ -34,7 +32,7 @@ def test_missing_milk_type_not_guessed():
     events = Mapper("UTC").map(
         [record(kind="bottle_activity", data={"amount": "5", "desc": "unknown"})], "s", "kid", "child", report
     )
-    assert not events and "explicit bottle_types" in next(iter(report.reasons))
+    assert not events and "unrecognized bottle description" in next(iter(report.reasons))
 
 
 def test_split_nap_identity_stays_anchored_to_start():
@@ -64,8 +62,8 @@ def test_ambiguous_and_other_child_naps_not_paired():
 
 
 def test_missing_id_and_invalid_volume_skipped():
-    mapper, report = Mapper("UTC", {"bottle_types": {"f": "Formula"}}), Report()
-    bad = record(kind="bottle_activity", data={"amount": "NaN", "desc": "f"})
+    mapper, report = Mapper("UTC"), Report()
+    bad = record(kind="bottle_activity", data={"amount": "NaN", "desc": "Formula"})
     no_id = record()
     del no_id["id"]
     assert not mapper.map([bad, no_id], "s", "kid", "child", report)
@@ -80,21 +78,6 @@ def test_dst_ambiguous_local_times_rejected_and_offset_times_preserved():
     raw = record(data={"start_time": "2026-11-01T01:30:00-04:00", "end_time": "2026-11-01T01:30:00-05:00"})
     event = mapper.map([raw], "s", "kid", "child", Report())[0]
     assert event.end.timestamp() - event.start.timestamp() == 3600
-
-
-def test_explicit_meal_description_preserves_known_foods_only():
-    mapper = Mapper(
-        "UTC",
-        {
-            "meal_descriptions": {
-                "Breakfast combo": [{"name": "Banana"}, {"name": "Oatmeal", "amount": "some"}]
-            }
-        },
-    )
-    event = mapper.map(
-        [record(kind="meal_activity", data={"desc": "Breakfast combo"})], "s", "kid", "child", Report()
-    )[0]
-    assert len(event.values["foods"]) == 2
 
 
 @pytest.mark.parametrize(
@@ -114,11 +97,6 @@ def test_unsupported_types_do_not_block_diapers(kind):
     )
     assert [event.kind for event in events] == ["diaper"]
     assert report.reasons["unsupported activity type"] == 1
-
-
-def test_obsolete_custom_rules_fail_clearly():
-    with pytest.raises(MappingError, match="no longer supported"):
-        Mapper("UTC", {"source_rules": {"anything": {"kind": "temperature"}}})
 
 
 def test_potty_is_not_imported_as_diaper():
@@ -157,13 +135,6 @@ def test_bottle_labels_map_without_configuration(description, expected):
     assert events[0].values["bottle_type"] == expected
 
 
-def test_explicit_bottle_override_takes_precedence():
-    events = Mapper("UTC", {"bottle_types": {"Formula": "Other"}}).map(
-        [record(kind="bottle_activity", data={"desc": "Formula"})], "s", "kid", "child", Report()
-    )
-    assert events[0].values["bottle_type"] == "Other"
-
-
 @pytest.mark.parametrize("description", [None, "", "Milk", "Formula and breast milk", {"invalid": True}])
 def test_ambiguous_bottle_labels_are_not_guessed(description):
     report = Report()
@@ -171,3 +142,17 @@ def test_ambiguous_bottle_labels_are_not_guessed(description):
         [record(kind="bottle_activity", data={"desc": description})], "s", "kid", "child", report
     )
     assert report.counts["skipped"] == 1
+
+
+def test_meal_description_is_preserved_without_inference():
+    events = Mapper("UTC").map(
+        [record(kind="meal_activity", data={"desc": "Banana and oatmeal", "quantity": "Most"})],
+        "s",
+        "kid",
+        "child",
+        Report(),
+    )
+    assert events[0].values == {
+        "foods": [{"name": "Banana and oatmeal"}],
+        "notes": "Most",
+    }

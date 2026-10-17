@@ -186,9 +186,6 @@ def child_pairs(source, destination, configured):
 
 async def connected(settings, callback):
     settings.require_credentials()
-    if settings.mapping_file and not settings.mapping_file.is_file():
-        raise SyncError("MAPPING_FILE does not exist; create the mapping file or unset MAPPING_FILE")
-    options = read_json(settings.mapping_file) if settings.mapping_file else {}
     async with aiohttp.ClientSession() as session:
         source = ProcareClient(
             AiohttpTransport(session),
@@ -199,10 +196,10 @@ async def connected(settings, callback):
         api = HistoricalAPI(
             settings.huckleberry_email, settings.huckleberry_password, settings.timezone, session
         )
-        destination = Huckleberry(api, settings.timezone, options)
+        destination = Huckleberry(api, settings.timezone)
         await destination.authenticate(settings.data_dir / "huckleberry_tokens.json")
         try:
-            return await callback(source, destination, options)
+            return await callback(source, destination)
         finally:
             destination.save_tokens(settings.data_dir / "huckleberry_tokens.json")
             client = api._firestore_client
@@ -216,7 +213,7 @@ async def run_window(settings, start, end, *, preview=None, now=None):
     check_window(start, end, today)
     started = now.isoformat()
 
-    async def work(source, destination, options):
+    async def work(source, destination):
         pairs = child_pairs(await source.children(), await destination.children(), settings.child_map)
         # Binding includes account and selected children, so a configuration change cannot redirect ownership.
         binding = fingerprint(
@@ -226,7 +223,7 @@ async def run_window(settings, start, end, *, preview=None, now=None):
         report = Report()
         try:
             ledger.prune(today)
-            mapper = Mapper(settings.timezone, options)
+            mapper = Mapper(settings.timezone)
             syncer = Synchronizer(destination, ledger, write=settings.write_enabled, preview=preview)
             for source_child, target_child in pairs.items():
                 records = await source.activities(source_child, start, end)

@@ -69,10 +69,8 @@ def number(value, label, *, positive=False):
 
 
 class Mapper:
-    def __init__(self, timezone_name, options=None):
-        self.tz, self.options = ZoneInfo(timezone_name), options or {}
-        if self.options.get("source_rules"):
-            raise MappingError("Custom source rules are no longer supported; remove source_rules")
+    def __init__(self, timezone_name):
+        self.tz = ZoneInfo(timezone_name)
 
     def _base(self, raw, context, source_child, child_uid, kind):
         identifier = raw.get("id")
@@ -111,11 +109,9 @@ class Mapper:
             description = data.get("desc")
             if not isinstance(description, str):
                 raise MappingError("missing bottle description")
-            bottle_type = self.options.get("bottle_types", {}).get(description)
-            if bottle_type is None:
-                bottle_type = BOTTLE_TYPES.get(description.strip().casefold())
+            bottle_type = BOTTLE_TYPES.get(description.strip().casefold())
             if not bottle_type:
-                raise MappingError("bottle description needs an explicit bottle_types mapping")
+                raise MappingError("unrecognized bottle description")
             # The supported parent feed reports bottle amounts in ounces.
             values = {"bottle_type": bottle_type, "units": "oz", "notes": comment}
             if data.get("amount") not in (None, ""):
@@ -139,9 +135,7 @@ class Mapper:
             if not isinstance(description, str) or not description.strip():
                 raise MappingError("meal has no food description")
             # Do not split free text or turn 'most'/'some' into invented numeric portions.
-            foods = self.options.get("meal_descriptions", {}).get(
-                description.strip(), [{"name": description.strip()}]
-            )
+            foods = [{"name": description.strip()}]
             return replace(
                 event,
                 values={

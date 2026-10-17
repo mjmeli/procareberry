@@ -54,8 +54,8 @@ class HistoricalAPI(HuckleberryAPI):
 
 
 class Huckleberry:
-    def __init__(self, api, timezone_name, options=None):
-        self.api, self.tz, self.options = api, ZoneInfo(timezone_name), options or {}
+    def __init__(self, api, timezone_name):
+        self.api, self.tz = api, ZoneInfo(timezone_name)
         self.food_catalog = {}
 
     async def authenticate(self, token_file):
@@ -95,16 +95,9 @@ class Huckleberry:
             if not isinstance(food, dict) or not isinstance(food.get("name"), str):
                 raise MappingError("invalid food name")
             name = food["name"].strip()
-            configured = self.options.get("foods", {}).get(name)
             matches = [f for f in self.food_catalog[child] if f[1].casefold() == name.casefold()]
-            if configured:
-                matches = [
-                    f
-                    for f in self.food_catalog[child]
-                    if f[0] == configured.get("id") and f[2] == configured.get("source")
-                ]
             if len(matches) != 1:
-                raise MappingError("food needs one exact catalog match or an explicit foods mapping")
+                raise MappingError("food needs one unambiguous exact catalog match")
             ident, actual, source = matches[0]
             # Empty string preserves an unspecified portion; never invent a numeric serving.
             refs.append(

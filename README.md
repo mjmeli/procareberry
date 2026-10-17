@@ -9,17 +9,16 @@ Sync recorded Procare daycare activities to Huckleberry. Procareberry runs local
 | Huckleberry record | Procare mapping | Requirements |
 | --- | --- | --- |
 | Sleep | Built-in `nap_activity` | Start and end times; uniquely pairable split records are supported |
-| Bottle | Built-in `bottle_activity` | Recognized milk labels map automatically; custom descriptions need an override; amounts are ounces; blank volume stays blank |
+| Bottle | Built-in `bottle_activity` | Recognized milk labels map automatically; amounts are ounces; blank volume stays blank |
 | Diaper | Built-in `bathroom_activity` | Explicit diaper type and recognized wet/BM/both/dry subtype |
-| Solids | Built-in `meal_activity` | Food description must exactly match one catalog item or an explicitly configured meal description |
+| Solids | Built-in `meal_activity` | Food description must match exactly one existing catalog item |
 
 Unknown types and missing/ambiguous values are reported without stopping other events. Free-text meals are not split or interpreted automatically. Potty, health, nursing, pumping, and general activity records are not supported. Attendance, media, messages, and administrative records are not imported.
 
 ## Docker quick start
 
 1. Copy `.env.example` to `.env` and fill in both accounts' email/password credentials.
-2. Mapping configuration is optional. For custom bottle descriptions or meal/food overrides, copy `mappings.example.json` to `config/mappings.json`, edit it, and set `MAPPING_FILE=/config/mappings.json` in `.env`.
-3. List child IDs if either account has multiple children:
+2. List child IDs if either account has multiple children:
 
    ```sh
    docker compose run --rm procareberry children
@@ -27,7 +26,7 @@ Unknown types and missing/ambiguous values are reported without stopping other e
 
    Set `CHILD_UID_MAP` to a JSON object pairing Procare IDs with Huckleberry IDs. Multiple pairs are supported. With exactly one child in each account, selection is automatic.
 
-4. Review the last seven days without writing:
+3. Review the last seven days without writing:
 
    ```sh
    docker compose run --rm procareberry once --dry-run
@@ -35,7 +34,7 @@ Unknown types and missing/ambiguous values are reported without stopping other e
 
    The explicit CLI preview includes proposed times and record contents. Treat its terminal output as private. Routine service logs contain only counts and reasons.
 
-5. After checking the preview against both apps, set `WRITE_ENABLED=true` in `.env` and start:
+4. After checking the preview against both apps, set `WRITE_ENABLED=true` in `.env` and start:
 
    ```sh
    docker compose up -d
@@ -60,15 +59,13 @@ procareberry healthcheck
 
 `serve` checks immediately and then every 15 minutes. Each check revisits seven days. Longer outages need an explicit backfill within the retention window. Status includes skipped/unknown mappings and unresolved writes. A successful empty feed still counts as a healthy poll.
 
-## Mapping configuration
+## Automatic activity matching
 
-`MAPPING_FILE` optionally points at a JSON file. Bottle descriptions matching Huckleberry labels (`Breast Milk`, `Formula`, `Tube Feeding`, `Cow Milk`, `Goat Milk`, `Soy Milk`, or `Other`) map automatically, ignoring capitalization and surrounding whitespace. Unknown or missing descriptions are skipped rather than assigned a milk type. Use `bottle_types` only to override an exact Procare description, such as a daycare-specific label. `meal_descriptions` can map an exact meal description to a list of actual foods; optional portions must come from known data or explicit configuration.
+No mapping file is needed. Bottle descriptions matching Huckleberry labels (`Breast Milk`, `Formula`, `Tube Feeding`, `Cow Milk`, `Goat Milk`, `Soy Milk`, or `Other`) map automatically, ignoring capitalization and surrounding whitespace. Missing or unrecognized descriptions are skipped.
 
-`foods` selects a specific existing food ID and catalog (`curated` or `custom`) when names are ambiguous. No food catalog items are created by the sync, including in write mode.
+Meals require one exact food-name match in the existing Huckleberry curated or custom catalog, ignoring capitalization and surrounding whitespace. Unknown or ambiguous names are skipped. Meal descriptions are not split into multiple foods, quantities are preserved in notes, and no catalog items are created.
 
 All events require a stable source `id` and `activity_time`. Source comments are preserved. Ambiguous local timestamps during a daylight-saving transition require a source UTC offset.
-
-See `mappings.example.json` for the supported configuration. Do not post raw payloads containing child data in public issues.
 
 ## Configuration
 
@@ -79,7 +76,6 @@ See `mappings.example.json` for the supported configuration. Do not post raw pay
 | `WRITE_ENABLED` | `false` | Permit destination writes |
 | `TZ` | `America/New_York` | Date boundaries and historical offsets |
 | `DATA_DIR` | `/data` | Tokens, SQLite ledger, current status and rotated logs |
-| `MAPPING_FILE` | Unset | JSON mapping configuration |
 | `CHILD_UID_MAP` | `{}` | Explicit source/destination child pairing |
 | `SYNC_CATEGORIES` | All supported categories | Comma-separated allowlist |
 | `INTERVAL_MINUTES` | `15` | Poll interval, minimum 5 minutes |

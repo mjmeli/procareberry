@@ -119,3 +119,14 @@ async def test_additional_valid_destination_shapes(destination, event, kind, val
 async def test_removed_destination_categories_rejected(destination, event, kind):
     with pytest.raises(MappingError, match="unsupported destination category"):
         await destination.prepare(event(kind, {}))
+
+
+async def test_ambiguous_food_name_is_skipped_without_catalog_writes(destination, event):
+    destination.food_catalog["child"] = [
+        ("curated-banana", "Banana", "curated"),
+        ("custom-banana", "Banana", "custom"),
+    ]
+    destination.api.create_solids_custom_food = AsyncMock()
+    with pytest.raises(MappingError, match="unambiguous exact catalog match"):
+        await destination.prepare(event("solids", {"foods": [{"name": "Banana"}]}))
+    destination.api.create_solids_custom_food.assert_not_called()

@@ -17,7 +17,7 @@ async def test_service_preview_import_and_restart(tmp_path, destination, monkeyp
             "kid_id": "kid",
             "activity_type": "bottle_activity",
             "activity_time": "2026-10-16T09:00:00-04:00",
-            "data": {"amount": "4", "desc": "Synthetic"},
+            "data": {"amount": "4", "desc": "Formula"},
         }
     ]
     source = SimpleNamespace(
@@ -29,7 +29,7 @@ async def test_service_preview_import_and_restart(tmp_path, destination, monkeyp
     destination.children = AsyncMock(return_value=[{"id": "child"}])
 
     async def connect(settings, callback):
-        return await callback(source, destination, {"bottle_types": {"Synthetic": "Formula"}})
+        return await callback(source, destination)
 
     monkeypatch.setattr(service, "connected", connect)
     now = datetime.fromisoformat("2026-10-16T15:00:00-04:00")
@@ -57,7 +57,7 @@ async def test_service_fetch_failure_sets_failed_status(tmp_path, destination, m
     destination.api.user_uid = "synthetic"
 
     async def connect(settings, callback):
-        return await callback(source, destination, {})
+        return await callback(source, destination)
 
     monkeypatch.setattr(service, "connected", connect)
     now = datetime.fromisoformat("2026-10-16T15:00:00-04:00")
