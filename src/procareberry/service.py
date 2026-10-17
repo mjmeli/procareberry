@@ -204,7 +204,7 @@ async def connected(settings, callback):
             destination.save_tokens(settings.data_dir / "huckleberry_tokens.json")
             client = api._firestore_client
             if client is not None:
-                await client.close()
+                client.close()
 
 
 async def run_window(settings, start, end, *, preview=None, now=None):

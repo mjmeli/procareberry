@@ -74,7 +74,7 @@ procareberry healthcheck
 
 ## Automatic activity matching
 
-Bottle descriptions matching Huckleberry labels (`Breast Milk`, `Formula`, `Tube Feeding`, `Cow Milk`, `Goat Milk`, `Soy Milk`, or `Other`) map automatically, ignoring capitalization and surrounding whitespace. Missing or unrecognized descriptions are skipped.
+Bottles use Procare's structured `bottle_type` first. When it is blank, descriptions are checked for Huckleberry labels (`Breast Milk`, `Formula`, `Tube Feeding`, `Cow Milk`, `Goat Milk`, `Soy Milk`, or `Other`) and clear milk names within text. Recognition ignores capitalization and supports aliases such as EBM, expressed milk, cow's milk, and soya milk. `Other` requires an exact label. Unknown structured types, multiple milk types, and negated or ambiguous descriptions are skipped for review. Recorded ounce amounts are preserved; amounts are never inferred from prose.
 
 Each meal description is matched as a single food name against Huckleberry's existing foods, ignoring capitalization and surrounding whitespace. A meal is imported when exactly one food matches. Unknown or ambiguous names are skipped, and the recorded quantity is preserved in notes.
 
