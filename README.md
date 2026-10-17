@@ -19,14 +19,14 @@ Procareberry was developed primarily with assistance from OpenAI Codex. I review
 
 ## What gets synced
 
-| Huckleberry record | Procare activity type | Requirements |
-| --- | --- | --- |
-| Sleep | `nap_activity` | Start and end times; uniquely pairable split records are supported |
-| Bottle | `bottle_activity` | Recognized milk labels map automatically; amounts are ounces; blank volume stays blank |
-| Diaper | `bathroom_activity` | Activity identifies a diaper change with a recognized wet/BM/both/dry subtype |
-| Solids | `meal_activity` | Food description must match exactly one existing catalog item |
+| Activity | What gets imported |
+| --- | --- |
+| Sleep | Completed naps with recorded start and end times |
+| Bottle | Feeds with a recognized milk type; amounts are ounces, and unspecified amounts stay blank |
+| Diaper | Wet, dirty, both, or dry diaper changes |
+| Solids | Meals whose food description matches exactly one existing Huckleberry food |
 
-Unknown types and missing/ambiguous values are reported without stopping other events. Free-text meals are not split or interpreted automatically. Potty, health, nursing, pumping, and general activity records are not supported. Attendance, media, messages, and administrative records are not imported.
+Unsupported or unclear activities are skipped and reported while other imports continue. Potty, health, nursing, pumping, and general activity records are not supported. Attendance, media, messages, and administrative records are not imported.
 
 ## Docker quick start
 
@@ -68,15 +68,15 @@ procareberry status
 procareberry healthcheck
 ```
 
-`once` and `backfill` default to seven calendar days including today. Date ranges are inclusive. `--dry-run` overrides `WRITE_ENABLED=true`. Future dates and dates before the current rolling 90-day window are rejected before network access.
+`once` and `backfill` default to seven calendar days including today. Date ranges are inclusive. `--dry-run` previews changes even when `WRITE_ENABLED=true`. Dates must be within the past 90 calendar days, including today.
 
-`serve` checks immediately and then every 15 minutes. Each check revisits seven days. Use `backfill` to import missed activities from earlier dates within the retention window. Status includes skipped activities, unsupported activity types, and unresolved writes. A successful poll counts as healthy even when the feed is empty.
+`serve` checks immediately and then every 15 minutes. Each check revisits seven days. Use `backfill` to import missed activities from earlier dates within the retention window. `status` shows the last sync result, skipped activities, and imports needing review.
 
 ## Automatic activity matching
 
 Bottle descriptions matching Huckleberry labels (`Breast Milk`, `Formula`, `Tube Feeding`, `Cow Milk`, `Goat Milk`, `Soy Milk`, or `Other`) map automatically, ignoring capitalization and surrounding whitespace. Missing or unrecognized descriptions are skipped.
 
-Each meal description is matched as a single food name against Huckleberry's existing curated and custom catalogs, ignoring capitalization and surrounding whitespace. A meal is imported when exactly one catalog item matches. Unknown or ambiguous names are skipped, and the recorded quantity is preserved in notes.
+Each meal description is matched as a single food name against Huckleberry's existing foods, ignoring capitalization and surrounding whitespace. A meal is imported when exactly one food matches. Unknown or ambiguous names are skipped, and the recorded quantity is preserved in notes.
 
 Activity comments are preserved in Huckleberry notes.
 
@@ -87,14 +87,14 @@ Activity comments are preserved in Huckleberry notes.
 | `PROCARE_EMAIL`, `PROCARE_PASSWORD` | Required | Parent email/password authentication |
 | `HUCKLEBERRY_EMAIL`, `HUCKLEBERRY_PASSWORD` | Required | Huckleberry authentication |
 | `WRITE_ENABLED` | `false` | Permit destination writes |
-| `TZ` | `America/New_York` | Date boundaries and historical offsets |
-| `DATA_DIR` | `/data` | Tokens, SQLite ledger, current status and rotated logs |
+| `TZ` | `America/New_York` | Time zone for activity dates and times |
+| `DATA_DIR` | `/data` | Account sessions, sync history, status, and logs |
 | `CHILD_UID_MAP` | `{}` | Explicit source/destination child pairing |
 | `SYNC_CATEGORIES` | All supported categories | Comma-separated allowlist |
 | `INTERVAL_MINUTES` | `15` | Poll interval, minimum 5 minutes |
 | `HEALTH_MAX_AGE_HOURS` | `36` | Maximum age of a successful poll |
 
-Procare verification-code and SSO login flows are not implemented. A missing token or verification response produces a clear error. The account's default API site is discovered automatically; ambiguous site selection is reported.
+Procareberry signs in with your Procare parent email and password. Accounts requiring a verification code or single sign-on are not supported.
 
 ## Corrections, duplicates and storage
 
@@ -115,10 +115,10 @@ Polling and backfills keep unresolved imports pending for manual review. Review 
 
 Procareberry keeps **90 days of sync history** and automatically removes older tracking data. Your Huckleberry entries stay in place. Backfills are limited to the same 90-day window.
 
-- `/data` contains private child information used to track changes, along with account tokens and logs. Media and a full copy of the Procare feed are not stored.
-- Logs are limited to about 1 MB each, with two older copies kept.
+- `/data` contains private child information used to track changes, along with saved account sessions and logs. Media and a full copy of the Procare feed are not stored.
+- Older logs are automatically rotated to limit disk usage.
 - Stop the service before backing up the entire `/data` directory. Restore it with the matching account configuration.
-- Keep the tracking data when troubleshooting. Deleting it removes the protection for entries you have edited or deleted. Unreadable saved data is reported as an error.
+- Keep the tracking data when troubleshooting. Deleting it removes the protection for entries you have edited or deleted.
 
 Run only one syncing instance per data directory; Procareberry blocks a second one. Separate installations do not coordinate, so avoid running them against the same child.
 
