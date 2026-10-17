@@ -61,9 +61,9 @@ procareberry healthcheck
 
 ## Automatic activity matching
 
-No mapping file is needed. Bottle descriptions matching Huckleberry labels (`Breast Milk`, `Formula`, `Tube Feeding`, `Cow Milk`, `Goat Milk`, `Soy Milk`, or `Other`) map automatically, ignoring capitalization and surrounding whitespace. Missing or unrecognized descriptions are skipped.
+Bottle descriptions matching Huckleberry labels (`Breast Milk`, `Formula`, `Tube Feeding`, `Cow Milk`, `Goat Milk`, `Soy Milk`, or `Other`) map automatically, ignoring capitalization and surrounding whitespace. Missing or unrecognized descriptions are skipped.
 
-Meals require one exact food-name match in the existing Huckleberry curated or custom catalog, ignoring capitalization and surrounding whitespace. Unknown or ambiguous names are skipped. Meal descriptions are not split into multiple foods, quantities are preserved in notes, and no catalog items are created.
+Each meal description is matched as a single food name against Huckleberry's existing curated and custom catalogs, ignoring capitalization and surrounding whitespace. A meal is imported when exactly one catalog item matches. Unknown or ambiguous names are skipped, and the recorded quantity is preserved in notes.
 
 All events require a stable source `id` and `activity_time`. Source comments are preserved. Ambiguous local timestamps during a daylight-saving transition require a source UTC offset.
 
