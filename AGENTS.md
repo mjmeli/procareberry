@@ -33,6 +33,17 @@
 - Keep credentials, saved sessions, and private child data out of committed files, fixtures, logs, and PR descriptions. Preserve the distinction between private preview output and routine logs containing only counts and reasons.
 - Update user documentation when commands, configuration, or sync behavior change.
 
+## README writing
+
+- Write for someone discovering and using the project. Use plain language, short paragraphs, and a practical tone; avoid dense technical prose and unexplained jargon.
+- Describe the current behavior directly. The README is a standalone reference, not a conversation, changelog, or account of implementation decisions. Remove stale instructions when behavior changes; avoid phrases such as "no mapping file is needed", "now supports", or "no longer uses" that narrate past changes.
+- Focus on what the project does, how to configure and run it, and what readers need for safe use and troubleshooting. Explain what imports, what gets skipped, and how corrections affect their entries.
+- Include implementation details only when they help readers take an action or understand a meaningful limitation. Omit internal activity names, source field requirements, nap-pairing mechanics, database terminology, authentication internals, dependency-pinning rationale, and GitHub Actions setup unless necessary for the documented task. Keep useful development commands and published image/version information.
+- Use descriptive subsections, bullets, numbered steps, and tables where they improve scanning. Use bold lead-ins for feature bullets. Keep related guidance together and avoid repeating it across sections.
+- Preserve guidance that affects privacy, writes, duplicate prevention, manual edits, backups, and recovery. Simplify its wording without losing the practical consequences.
+- Keep the feature overview and AI disclosure accurate. Distinguish simulated automated tests from live-account validation; do not imply testing that has not happened.
+- Before finishing a README edit, read the affected section in context, verify commands and behavior against the code or workflow, and remove conversational wording, obsolete guidance, repetition, and unnecessary internal details.
+
 ## GitHub connectivity
 
 - If Git or the GitHub CLI reports an authentication or connection error inside the sandbox, retry a read-only diagnostic with network access before concluding that credentials are invalid. Do not recommend re-authentication based only on a sandboxed failure.
