@@ -1,6 +1,6 @@
 # Procareberry
 
-Parents who use Procare for daycare updates and Huckleberry for daily tracking otherwise have to enter the same activities in both apps. Procareberry automates that handoff by checking Procare's recorded activities and preparing matching entries in Huckleberry.
+Procareberry imports recorded daycare activities from Procare into Huckleberry, keeping sleep, bottles, diapers, and solids together with your daily tracking.
 
 Procareberry can:
 
@@ -11,7 +11,7 @@ Procareberry can:
 - **Multiple children:** Pair children across your Procare and Huckleberry accounts.
 - **Local or Docker setup:** Run on your own machine, with sync history kept locally for 90 days to prevent duplicate imports on ordinary reruns.
 
-Review a preview against both apps before enabling writes. Procareberry never writes to Huckleberry until you opt in. Procare and Huckleberry access is unofficial and can change.
+Writes are disabled by default. Review a preview against both apps before enabling them. Procare and Huckleberry access is unofficial and can change.
 
 ## AI disclosure
 
@@ -19,12 +19,12 @@ Procareberry was developed primarily with assistance from OpenAI Codex. I review
 
 ## What gets synced
 
-| Huckleberry record | Procare mapping | Requirements |
+| Huckleberry record | Procare activity type | Requirements |
 | --- | --- | --- |
-| Sleep | Built-in `nap_activity` | Start and end times; uniquely pairable split records are supported |
-| Bottle | Built-in `bottle_activity` | Recognized milk labels map automatically; amounts are ounces; blank volume stays blank |
-| Diaper | Built-in `bathroom_activity` | Explicit diaper type and recognized wet/BM/both/dry subtype |
-| Solids | Built-in `meal_activity` | Food description must match exactly one existing catalog item |
+| Sleep | `nap_activity` | Start and end times; uniquely pairable split records are supported |
+| Bottle | `bottle_activity` | Recognized milk labels map automatically; amounts are ounces; blank volume stays blank |
+| Diaper | `bathroom_activity` | Activity identifies a diaper change with a recognized wet/BM/both/dry subtype |
+| Solids | `meal_activity` | Food description must match exactly one existing catalog item |
 
 Unknown types and missing/ambiguous values are reported without stopping other events. Free-text meals are not split or interpreted automatically. Potty, health, nursing, pumping, and general activity records are not supported. Attendance, media, messages, and administrative records are not imported.
 
@@ -45,7 +45,7 @@ Unknown types and missing/ambiguous values are reported without stopping other e
    docker compose run --rm procareberry once --dry-run
    ```
 
-   The explicit CLI preview includes proposed times and record contents. Treat its terminal output as private. Routine service logs contain only counts and reasons.
+   The preview includes proposed times and record contents. Treat its terminal output as private. Routine service logs contain only counts and reasons.
 
 4. After checking the preview against both apps, set `WRITE_ENABLED=true` in `.env` and start:
 
@@ -70,7 +70,7 @@ procareberry healthcheck
 
 `once` and `backfill` default to seven calendar days including today. Date ranges are inclusive. `--dry-run` overrides `WRITE_ENABLED=true`. Future dates and dates before the current rolling 90-day window are rejected before network access.
 
-`serve` checks immediately and then every 15 minutes. Each check revisits seven days. Longer outages need an explicit backfill within the retention window. Status includes skipped/unknown mappings and unresolved writes. A successful empty feed still counts as a healthy poll.
+`serve` checks immediately and then every 15 minutes. Each check revisits seven days. Use `backfill` to import missed activities from earlier dates within the retention window. Status includes skipped activities, unsupported activity types, and unresolved writes. A successful poll counts as healthy even when the feed is empty.
 
 ## Automatic activity matching
 
@@ -109,7 +109,7 @@ Procare verification-code and SSO login flows are not implemented. A missing tok
 
 If a connection drops during an import, Procareberry checks Huckleberry on the next run to see whether the entry was saved. If it cannot tell for sure, it marks the import as pending to avoid creating a duplicate.
 
-Review pending imports manually, especially if you edited or deleted the entry before Procareberry could confirm it. Running another backfill will not force a pending import through.
+Polling and backfills keep unresolved imports pending for manual review. Review these entries in Huckleberry, especially if you edited or deleted one before Procareberry could confirm it.
 
 ### Storage and backups
 
@@ -118,7 +118,7 @@ Procareberry keeps **90 days of sync history** and automatically removes older t
 - `/data` contains private child information used to track changes, along with account tokens and logs. Media and a full copy of the Procare feed are not stored.
 - Logs are limited to about 1 MB each, with two older copies kept.
 - Stop the service before backing up the entire `/data` directory. Restore it with the matching account configuration.
-- Keep the tracking data when troubleshooting. Deleting it removes the protection for entries you have edited or deleted. If saved data cannot be read, Procareberry reports the problem instead of resetting it.
+- Keep the tracking data when troubleshooting. Deleting it removes the protection for entries you have edited or deleted. Unreadable saved data is reported as an error.
 
 Run only one syncing instance per data directory; Procareberry blocks a second one. Separate installations do not coordinate, so avoid running them against the same child.
 
