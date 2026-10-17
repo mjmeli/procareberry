@@ -2,6 +2,7 @@
 
 import math
 import re
+import unicodedata
 from dataclasses import replace
 from datetime import datetime, timezone
 from typing import get_args
@@ -78,6 +79,17 @@ DIAPERS = {
 }
 
 
+def sanitize_notes(text: str) -> str:
+    """Clean plain-text notes while preserving meaningful Unicode formatting."""
+    lines = text.replace("\ufffc", "").lstrip("\ufeff").splitlines()
+    cleaned_lines = []
+    for line in lines:
+        line = "".join(ch for ch in line if unicodedata.category(ch) != "Cc" or ch.isspace())
+        cleaned_lines.append(re.sub(r"\s+", " ", line).strip())
+    cleaned = "\n".join(cleaned_lines).strip()
+    return re.sub(r"\n{3,}", "\n\n", cleaned)
+
+
 def timestamp(value, tz: ZoneInfo) -> datetime:
     if not isinstance(value, str) or not value.strip():
         raise MappingError("missing timestamp")
@@ -134,6 +146,7 @@ class Mapper:
         comment = raw.get("comment") or ""
         if not isinstance(comment, str):
             raise MappingError("invalid comment")
+        comment = sanitize_notes(comment)
         if atype == "nap_activity":
             event = self._base(raw, context, source_child, child_uid, "sleep")
             start = timestamp(data["start_time"], self.tz) if data.get("start_time") else None
@@ -177,7 +190,10 @@ class Mapper:
                 values={
                     "foods": foods,
                     "notes": "; ".join(
-                        str(x) for x in (data.get("type"), data.get("quantity"), comment) if x
+                        part
+                        for x in (data.get("type"), data.get("quantity"), comment)
+                        if x
+                        if (part := sanitize_notes(str(x)))
                     ),
                 },
             )

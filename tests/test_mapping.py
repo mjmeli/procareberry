@@ -214,3 +214,65 @@ def test_learning_activities_are_ignored_without_skip_reason():
     assert not Mapper("UTC").map([record(kind="learning_activity")], "s", "kid", "child", report)
     assert report.counts == {"ignored": 1}
     assert report.reasons == {}
+
+
+@pytest.mark.parametrize(
+    "comment,expected",
+    [
+        ("\n\n\ufffc", ""),
+        ("Mrs Janay ", "Mrs Janay"),
+        (" \r\n First line \r\n\r\n\r\n Second line \r\n", "First line\n\nSecond line"),
+        ("Finished \ufffc bottle 🍼 — café", "Finished bottle 🍼 — café"),
+    ],
+)
+@pytest.mark.parametrize(
+    "kind,data",
+    [
+        ("bathroom_activity", {"type": "Diaper", "sub_type": "Wet"}),
+        ("bottle_activity", {"desc": "Formula", "amount": "3"}),
+        (
+            "nap_activity",
+            {"start_time": "2026-10-16T10:00:00-04:00", "end_time": "2026-10-16T11:00:00-04:00"},
+        ),
+        ("meal_activity", {"desc": "Banana"}),
+    ],
+)
+def test_activity_notes_are_sanitized(comment, expected, kind, data):
+    raw = record(kind=kind, data=data)
+    raw["comment"] = comment
+    events = Mapper("UTC").map([raw], "s", "kid", "child", Report())
+    assert events[0].values["notes"] == expected
+
+
+def test_split_nap_uses_end_comment_when_start_only_has_placeholders():
+    start = record("start", data={"start_time": "2026-10-16T10:00:00-04:00"})
+    start["comment"] = "\n\n\ufffc"
+    end = record("end", data={"end_time": "2026-10-16T11:00:00-04:00"})
+    end["comment"] = " Slept well \ufffc\n"
+    events = Mapper("UTC").map([start, end], "s", "kid", "child", Report())
+    assert events[0].values["notes"] == "Slept well"
+
+
+def test_meal_note_parts_are_cleaned_before_joining():
+    raw = record(kind="meal_activity", data={"desc": "Banana", "type": " Snack \n", "quantity": "\ufffc\n"})
+    raw["comment"] = " Ate well \n"
+    events = Mapper("UTC").map([raw], "s", "kid", "child", Report())
+    assert events[0].values["notes"] == "Snack; Ate well"
+
+
+@pytest.mark.parametrize(
+    "comment,expected",
+    [
+        ("\ufeffAte\u00a0well\u202f today\t!", "Ate well today !"),
+        ("A\x00te\x07 well\x1b", "Ate well"),
+        ("First\u2028Second\u2029Third", "First\nSecond\nThird"),
+        ("Family 👨\u200d👩\u200d👧 ❤️ café", "Family 👨\u200d👩\u200d👧 ❤️ café"),
+        ("Words\u200bhere می\u200cروم", "Words\u200bhere می\u200cروم"),
+        (r"Literal \n and \ufffc", r"Literal \n and \ufffc"),
+    ],
+)
+def test_note_unicode_cleanup_preserves_meaning(comment, expected):
+    from procareberry.mapping import sanitize_notes
+
+    assert sanitize_notes(comment) == expected
+    assert sanitize_notes(sanitize_notes(comment)) == expected

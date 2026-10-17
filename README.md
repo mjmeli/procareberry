@@ -78,7 +78,7 @@ Bottles use Procare's structured `bottle_type` first. When it is blank, descript
 
 Each meal description is matched as a single food name against Huckleberry's existing foods, ignoring capitalization and surrounding whitespace. A meal is imported when exactly one food matches. Unknown or ambiguous names are skipped, and the recorded quantity is preserved in notes.
 
-Activity comments are preserved in Huckleberry notes.
+Activity comments are copied into Huckleberry notes after removing attachment placeholders and nonprinting control characters. Spaces and line endings are normalized, and surrounding whitespace is trimmed. Meaningful line breaks are preserved, with repeated blank lines collapsed to one.
 
 ## Configuration
 
