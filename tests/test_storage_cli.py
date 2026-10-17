@@ -1,3 +1,5 @@
+import asyncio
+import signal
 import subprocess
 import sys
 from datetime import date, datetime, timedelta
@@ -9,6 +11,30 @@ from procareberry.config import Settings, check_window
 from procareberry.models import SyncError
 from procareberry.service import child_pairs, health
 from procareberry.storage import Ledger, private_json, writer_lock
+
+
+async def test_serve_logs_ignored_type_totals_once(monkeypatch, caplog):
+    from procareberry import cli
+
+    caplog.set_level("INFO")
+    handlers = {}
+    monkeypatch.setattr(asyncio.get_running_loop(), "add_signal_handler", handlers.__setitem__)
+
+    async def run_window(*args):
+        handlers[signal.SIGTERM]()
+        return {
+            "ok": True,
+            "counts": {"created": 6, "ignored": 11},
+            "ignored_types": {"sign_in_activity": 1, "photo_activity": 10},
+            "reasons": {},
+        }
+
+    monkeypatch.setattr(cli, "run_window", run_window)
+    await cli.serve(Settings())
+    assert caplog.messages == [
+        'Sync complete: {"created": 6, "ignored": 11}',
+        'Ignored by type: {"photo_activity": 10, "sign_in_activity": 1}',
+    ]
 
 
 def test_retention_and_binding_survive_restart(tmp_path):

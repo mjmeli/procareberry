@@ -9,12 +9,13 @@
 
 ## Validation
 
-- Use the locked dependencies and the checks documented in README.md:
+- Before pushing changes or opening/updating a PR, read `.github/workflows/build-and-publish.yml` and run its Python validation steps against the final changes using locked dependencies:
   - `uv sync --locked`
   - `uv run --locked pytest`
   - `uv run --locked ruff check .`
   - `uv run --locked ruff format --check .`
   - `uv run --locked procareberry --help`
+- Run `git diff --check` as well. Lint and formatting are separate checks: passing `ruff check` does not verify formatting. Fix failures and rerun the checks before pushing. If a check cannot run, identify it and explain why rather than claiming it passed.
 - Add regression coverage for changed sync behavior, particularly duplicate prevention, corrections, interrupted imports, and manual edits or deletions.
 - Let CI build and smoke-test the Docker image for each PR. Agents do not need to wait for the Docker image build or publication before handing off. Report CI as pending, passed, failed, or unverified based on observed results; do not claim pending checks passed.
 
@@ -30,7 +31,7 @@
 
 - Preserve writes-disabled defaults and dry-run behavior, duplicate prevention, and respect for manually edited or deleted destination entries.
 - Use simulated account data in automated tests. Do not access live accounts or enable destination writes for testing without explicit authorization.
-- Keep credentials, saved sessions, and private child data out of committed files, fixtures, logs, and PR descriptions. Preserve the distinction between private preview output and routine logs containing only counts and reasons.
+- Keep credentials, saved sessions, and private child data out of committed files, fixtures, logs, and PR descriptions. Preserve the distinction between private preview output and routine logs. Routine logs may include counts, reasons, and confirmed write summaries with category, event times, and a short hashed source reference; omit notes, record contents, and child IDs.
 - Update user documentation when commands, configuration, or sync behavior change.
 
 ## README writing

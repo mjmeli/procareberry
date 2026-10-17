@@ -14,7 +14,8 @@ def ledger(tmp_path):
     ledger.close()
 
 
-async def test_rerun_backfill_and_correction(destination, event, ledger, db):
+async def test_rerun_backfill_and_correction(destination, event, ledger, db, caplog):
+    caplog.set_level("INFO", logger="procareberry")
     syncer = Synchronizer(destination, ledger, write=True)
     source = event()
     report = Report()
@@ -28,6 +29,10 @@ async def test_rerun_backfill_and_correction(destination, event, ledger, db):
     assert report.counts.get("updated") == 1
     assert db.data[path]["amount"] == 5
     assert len([p for p in db.data if p.startswith("feed/child/intervals/")]) == 1
+    assert caplog.messages == [
+        "Created bottle entry: source=event-1 start=2026-10-16T10:00:00-04:00",
+        "Updated bottle entry: source=event-1 start=2026-10-16T10:00:00-04:00",
+    ]
 
 
 @pytest.mark.parametrize("deleted", [False, True])
@@ -47,16 +52,19 @@ async def test_manual_changes_are_preserved(destination, event, ledger, db, dele
     assert (path not in db.data) if deleted else db.data[path]["amount"] == 4
 
 
-async def test_dry_run_never_writes(destination, event, ledger, db):
+async def test_dry_run_never_writes(destination, event, ledger, db, caplog):
+    caplog.set_level("INFO", logger="procareberry")
     writes = db.write_count
     report = Report()
     await Synchronizer(destination, ledger, write=False).sync(event(), report)
     assert report.counts["preview_create"] == 1
     assert db.write_count == writes
     assert ledger.get("event-1") is None
+    assert not caplog.messages
 
 
-async def test_failed_ack_recovers_without_duplicate(destination, event, ledger, db):
+async def test_failed_ack_recovers_without_duplicate(destination, event, ledger, db, caplog):
+    caplog.set_level("INFO", logger="procareberry")
     original = destination.log
 
     async def log_then_fail(prepared):
@@ -67,10 +75,22 @@ async def test_failed_ack_recovers_without_duplicate(destination, event, ledger,
     report = Report()
     await Synchronizer(destination, ledger, write=True).sync(event(), report)
     assert ledger.get("event-1")["state"] == "pending"
+    assert not caplog.messages
     destination.log = original
     await Synchronizer(destination, ledger, write=True).sync(event(), report)
     assert ledger.get("event-1")["state"] == "owned"
     assert len([p for p in db.data if "/intervals/" in p]) == 1
+    assert caplog.messages == ["Recovered bottle entry: source=event-1 start=2026-10-16T10:00:00-04:00"]
+
+
+async def test_created_log_has_sleep_times_without_private_contents(destination, event, ledger, caplog):
+    caplog.set_level("INFO", logger="procareberry")
+    source = event("sleep", {"notes": "private comment"}, end="2026-10-16T11:00:00-04:00", key="a" * 64)
+    await Synchronizer(destination, ledger, write=True).sync(source, Report())
+    assert caplog.messages == [
+        "Created sleep entry: source=aaaaaaaaaaaa "
+        "start=2026-10-16T10:00:00-04:00 end=2026-10-16T11:00:00-04:00"
+    ]
 
 
 async def test_uncertain_missing_record_not_recreated(destination, event, ledger, db):

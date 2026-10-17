@@ -98,6 +98,8 @@ async def serve(settings):
                 "complete" if result["ok"] else "needs attention",
                 json.dumps(result["counts"], sort_keys=True),
             )
+            if result["ignored_types"]:
+                logging.info("Ignored by type: %s", json.dumps(result["ignored_types"], sort_keys=True))
             for reason, count in result["reasons"].items():
                 logging.info("%s (%d)", reason, count)
         except SyncError as exc:

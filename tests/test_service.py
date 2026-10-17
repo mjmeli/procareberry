@@ -18,7 +18,10 @@ async def test_service_preview_import_and_restart(tmp_path, destination, monkeyp
             "activity_type": "bottle_activity",
             "activity_time": "2026-10-16T09:00:00-04:00",
             "data": {"amount": "4", "desc": "Formula"},
-        }
+        },
+        {"activity_type": "photo_activity"},
+        {"activity_type": "photo_activity"},
+        {"activity_type": "sign_in_activity"},
     ]
     source = SimpleNamespace(
         base="https://api-school.procareconnect.com/api/web/",
@@ -43,7 +46,10 @@ async def test_service_preview_import_and_restart(tmp_path, destination, monkeyp
     assert result["counts"]["created"] == 1
     result = await service.run_window(settings, now.date(), now.date(), now=now)
     assert result["counts"]["unchanged"] == 1
-    assert result["source_types"] == {"bottle_activity": 1}
+    assert result["source_types"] == {"bottle_activity": 1, "photo_activity": 2, "sign_in_activity": 1}
+    assert result["counts"]["ignored"] == 3
+    assert result["ignored_types"] == {"photo_activity": 2, "sign_in_activity": 1}
+    assert json.loads((tmp_path / "status.json").read_text())["ignored_types"] == result["ignored_types"]
     assert "Synthetic" not in (tmp_path / "status.json").read_text()
 
 

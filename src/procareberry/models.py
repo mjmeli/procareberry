@@ -73,6 +73,7 @@ class Report:
     counts: dict[str, int] = field(default_factory=dict)
     reasons: dict[str, int] = field(default_factory=dict)
     source_types: dict[str, int] = field(default_factory=dict)
+    ignored_types: dict[str, int] = field(default_factory=dict)
 
     def add(self, result: str, reason: str = "") -> None:
         self.counts[result] = self.counts.get(result, 0) + 1

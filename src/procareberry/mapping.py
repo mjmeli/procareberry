@@ -215,6 +215,7 @@ class Mapper:
             try:
                 if atype in IGNORED:
                     report.add("ignored")
+                    report.ignored_types[label] = report.ignored_types.get(label, 0) + 1
                     continue
                 event = self._default(raw, context, source_child, child_uid)
                 if event.source_key in seen:
