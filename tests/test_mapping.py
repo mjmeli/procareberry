@@ -156,3 +156,61 @@ def test_meal_description_is_preserved_without_inference():
         "foods": [{"name": "Banana and oatmeal"}],
         "notes": "Most",
     }
+
+
+@pytest.mark.parametrize(
+    "data,expected",
+    [
+        ({"bottle_type": "Breast Milk", "desc": ""}, "Breast Milk"),
+        ({"bottle_type": "Formula", "desc": "breast milk"}, "Formula"),
+        ({"bottle_type": "  ", "desc": "Had 3 ounces of breast milk"}, "Breast Milk"),
+        ({"desc": "Had 3 ounces of breast milk"}, "Breast Milk"),
+        ({"desc": "4 oz of FORMULA consumed"}, "Formula"),
+        ({"desc": "Expressed milk, 3 oz"}, "Breast Milk"),
+        ({"desc": "EBM bottle"}, "Breast Milk"),
+        ({"desc": "breast-milk"}, "Breast Milk"),
+        ({"desc": "cow’s milk"}, "Cow Milk"),
+        ({"desc": "whole milk bottle"}, "Cow Milk"),
+        ({"desc": "goat's milk"}, "Goat Milk"),
+        ({"desc": "soya milk"}, "Soy Milk"),
+        ({"desc": "Tube feeding completed"}, "Tube Feeding"),
+        ({"bottle_type": "EBM"}, "Breast Milk"),
+    ],
+)
+def test_bottle_structured_types_and_text(data, expected):
+    events = Mapper("UTC").map(
+        [record(kind="bottle_activity", data={"amount": "3", **data})],
+        "s",
+        "kid",
+        "child",
+        Report(),
+    )
+    assert events[0].values["bottle_type"] == expected
+    assert events[0].values["amount"] == 3
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"bottle_type": "unknown", "desc": "Formula"},
+        {"bottle_type": {"invalid": True}, "desc": "Formula"},
+        {"desc": "Formula mixed with breast milk"},
+        {"desc": "No formula consumed"},
+        {"desc": "Breast milk or formula"},
+        {"desc": "Refused breast milk"},
+        {"desc": "Other child had a bottle"},
+        {"desc": "Milk bottle"},
+        {"desc": "Reformulated drink"},
+    ],
+)
+def test_bottle_detection_does_not_guess(data):
+    report = Report()
+    assert not Mapper("UTC").map([record(kind="bottle_activity", data=data)], "s", "kid", "child", report)
+    assert report.counts == {"skipped": 1}
+
+
+def test_learning_activities_are_ignored_without_skip_reason():
+    report = Report()
+    assert not Mapper("UTC").map([record(kind="learning_activity")], "s", "kid", "child", report)
+    assert report.counts == {"ignored": 1}
+    assert report.reasons == {}

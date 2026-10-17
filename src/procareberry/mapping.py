@@ -20,9 +20,50 @@ IGNORED = frozenset(
         "note_activity",
         "incident_activity",
         "name_to_face_activity",
+        "learning_activity",
     }
 )
 BOTTLE_TYPES = {name.casefold(): name for name in get_args(BottleType)}
+BOTTLE_PATTERNS = {
+    "Breast Milk": r"\b(?:breast\s*milk|human\s+milk|expressed\s+(?:breast\s*)?milk|ebm)\b",
+    "Formula": r"\bformula\b",
+    "Cow Milk": r"\b(?:cow(?:s)?\s*milk|whole\s+milk|2\s*%\s*milk|skim\s+milk)\b",
+    "Goat Milk": r"\bgoat(?:s)?\s*milk\b",
+    "Soy Milk": r"\b(?:soy|soya)\s*milk\b",
+    "Tube Feeding": r"\btube\s+feed(?:ing)?\b",
+}
+
+
+def bottle_type(data):
+    """Prefer an explicit type; infer only one unambiguous type from free text."""
+    structured = data.get("bottle_type")
+    if structured is not None and structured != "":
+        if not isinstance(structured, str):
+            raise MappingError("invalid structured bottle type")
+        if structured.strip():
+            return detect_bottle_type(structured, structured=True)
+    description = data.get("desc")
+    if not isinstance(description, str):
+        raise MappingError("missing bottle description")
+    return detect_bottle_type(description)
+
+
+def detect_bottle_type(text, *, structured=False):
+    text = re.sub(r"[’']", "", text.casefold().strip())
+    text = re.sub(r"[-_\s]+", " ", text)
+    if text in BOTTLE_TYPES:
+        return BOTTLE_TYPES[text]
+    # Negated mentions and alternatives cannot establish what was consumed.
+    if re.search(r"\b(?:no|not|without|refused|declined|instead|or)\b", text):
+        raise MappingError("ambiguous bottle description")
+    matches = [name for name, pattern in BOTTLE_PATTERNS.items() if re.search(pattern, text)]
+    if len(matches) == 1:
+        if not structured or re.fullmatch(BOTTLE_PATTERNS[matches[0]], text):
+            return matches[0]
+    raise MappingError(
+        "unrecognized structured bottle type" if structured else "unrecognized bottle description"
+    )
+
 
 DIAPERS = {
     "wet": "pee",
@@ -106,14 +147,9 @@ class Mapper:
             )
         if atype == "bottle_activity":
             event = self._base(raw, context, source_child, child_uid, "bottle")
-            description = data.get("desc")
-            if not isinstance(description, str):
-                raise MappingError("missing bottle description")
-            bottle_type = BOTTLE_TYPES.get(description.strip().casefold())
-            if not bottle_type:
-                raise MappingError("unrecognized bottle description")
+            milk_type = bottle_type(data)
             # The supported parent feed reports bottle amounts in ounces.
-            values = {"bottle_type": bottle_type, "units": "oz", "notes": comment}
+            values = {"bottle_type": milk_type, "units": "oz", "notes": comment}
             if data.get("amount") not in (None, ""):
                 values["amount"] = number(data["amount"], "bottle amount")
             return replace(event, values=values)

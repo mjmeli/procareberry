@@ -74,7 +74,7 @@ procareberry healthcheck
 
 ## Automatic activity matching
 
-Bottle descriptions matching Huckleberry labels (`Breast Milk`, `Formula`, `Tube Feeding`, `Cow Milk`, `Goat Milk`, `Soy Milk`, or `Other`) map automatically, ignoring capitalization and surrounding whitespace. Missing or unrecognized descriptions are skipped.
+Bottles use Procare's structured `bottle_type` first. When it is blank, descriptions are checked for Huckleberry labels (`Breast Milk`, `Formula`, `Tube Feeding`, `Cow Milk`, `Goat Milk`, `Soy Milk`, or `Other`) and clear milk names within text. Recognition ignores capitalization and supports aliases such as EBM, expressed milk, cow's milk, and soya milk. `Other` requires an exact label. Unknown structured types, multiple milk types, and negated or ambiguous descriptions are skipped for review. Recorded ounce amounts are preserved; amounts are never inferred from prose.
 
 Each meal description is matched as a single food name against Huckleberry's existing foods, ignoring capitalization and surrounding whitespace. A meal is imported when exactly one food matches. Unknown or ambiguous names are skipped, and the recorded quantity is preserved in notes.
 
@@ -132,4 +132,6 @@ uv run --locked ruff format --check .
 uv run --locked procareberry --help
 ```
 
-Container images are published to `ghcr.io/mjmeli/procareberry`: pushes to `main` update `latest`, and version tags such as `v1.2.3` publish `1.2.3`. Images also receive a `sha-` tag identifying the source commit.
+Container images are published to `ghcr.io/mjmeli/procareberry` on pushes to every branch. Each image receives a sanitized branch-name tag and a `sha-` tag identifying the source commit. Pushes to the default branch update `latest`. Version tags such as `v1.2.3` publish `1.2.3`, `1.2`, and `latest`. Docker Hub receives the same tags when its credentials are configured.
+
+Pull request workflows build and smoke-test an image without publishing it. For testing a PR locally, pull the image published by the source branch push; fork branches do not publish to this repository's registry. Use the commit-specific `sha-` tag or image digest when testing a particular revision.
