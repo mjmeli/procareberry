@@ -132,4 +132,6 @@ uv run --locked ruff format --check .
 uv run --locked procareberry --help
 ```
 
-Container images are published to `ghcr.io/mjmeli/procareberry`: pushes to `main` update `latest`, and version tags such as `v1.2.3` publish `1.2.3`. Images also receive a `sha-` tag identifying the source commit.
+Container images are published to `ghcr.io/mjmeli/procareberry` on pushes to every branch. Each image receives a sanitized branch-name tag and a `sha-` tag identifying the source commit. Pushes to the default branch update `latest`. Version tags such as `v1.2.3` publish `1.2.3`, `1.2`, and `latest`. Docker Hub receives the same tags when its credentials are configured.
+
+Pull request workflows build and smoke-test an image without publishing it. For testing a PR locally, pull the image published by the source branch push; fork branches do not publish to this repository's registry. Use the commit-specific `sha-` tag or image digest when testing a particular revision.
