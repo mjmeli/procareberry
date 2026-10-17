@@ -1,6 +1,6 @@
-# Procareberry
+# Procareberry — Procare to Huckleberry Sync
 
-Procareberry imports recorded daycare activities from Procare into Huckleberry, keeping sleep, bottles, diapers, and solids together with your daily tracking.
+Procareberry is an unofficial Procare to Huckleberry sync tool that automatically imports recorded daycare naps, bottle feeds, diaper changes, and meals into the Huckleberry baby tracker.
 
 Procareberry can:
 
