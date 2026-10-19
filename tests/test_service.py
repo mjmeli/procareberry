@@ -105,7 +105,12 @@ async def test_blank_bottle_default_reruns_corrections_and_manual_changes(
     async def run():
         return await service.run_window(settings, now.date(), now.date(), now=now)
 
-    assert (await run())["counts"] == {"skipped": 1}
+    result = await run()
+    assert result["counts"] == {"skipped": 1}
+    assert result["diagnostics"][0]["kind"] == "bottle"
+    assert result["diagnostics"][0]["start"] == records[0]["activity_time"]
+    saved = json.loads((tmp_path / "status.json").read_text())
+    assert saved["diagnostics"] == result["diagnostics"]
     settings = replace(settings, default_bottle_type="Breast Milk", write_enabled=False)
     writes = db.write_count
     assert (await run())["counts"] == {"preview_create": 1}

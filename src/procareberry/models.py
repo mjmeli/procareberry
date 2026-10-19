@@ -68,16 +68,29 @@ class Prepared:
     kwargs: dict
 
 
+def event_details(event):
+    """Only the event metadata permitted in routine diagnostics."""
+    return {
+        "kind": event.kind,
+        "source": event.source_key[:12],
+        "start": event.start.isoformat(),
+        "end": event.end.isoformat() if event.end else None,
+    }
+
+
 @dataclass
 class Report:
     counts: dict[str, int] = field(default_factory=dict)
     reasons: dict[str, int] = field(default_factory=dict)
     source_types: dict[str, int] = field(default_factory=dict)
     ignored_types: dict[str, int] = field(default_factory=dict)
+    diagnostics: list[dict] = field(default_factory=list)
 
-    def add(self, result: str, reason: str = "") -> None:
+    def add(self, result: str, reason: str = "", *, detail=None) -> None:
         self.counts[result] = self.counts.get(result, 0) + 1
         if reason:
             # At most 50 categories of diagnostics; no source comments or child details.
             key = reason if reason in self.reasons or len(self.reasons) < 50 else "additional reasons"
             self.reasons[key] = self.reasons.get(key, 0) + 1
+            if detail is not None:
+                self.diagnostics.append({"result": result, "reason": reason, **detail})

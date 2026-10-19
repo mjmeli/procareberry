@@ -13,7 +13,7 @@ from procareberry.service import child_pairs, health
 from procareberry.storage import Ledger, private_json, writer_lock
 
 
-async def test_serve_logs_ignored_type_totals_once(monkeypatch, caplog):
+async def test_serve_logs_ignored_type_totals_once(monkeypatch, caplog, tmp_path):
     from procareberry import cli
 
     caplog.set_level("INFO")
@@ -27,12 +27,15 @@ async def test_serve_logs_ignored_type_totals_once(monkeypatch, caplog):
             "counts": {"created": 6, "ignored": 11},
             "ignored_types": {"sign_in_activity": 1, "photo_activity": 10},
             "reasons": {},
+            "from": "2026-10-10",
+            "to": "2026-10-16",
+            "diagnostics": [],
         }
 
     monkeypatch.setattr(cli, "run_window", run_window)
-    await cli.serve(Settings())
+    await cli.serve(Settings(data_dir=tmp_path))
     assert caplog.messages == [
-        'Sync complete: {"created": 6, "ignored": 11}',
+        'Sync complete [2026-10-10 to 2026-10-16]: {"created": 6, "ignored": 11}',
         'Ignored by type: {"photo_activity": 10, "sign_in_activity": 1}',
     ]
 
@@ -110,3 +113,69 @@ def test_invalid_bottle_default_configuration(monkeypatch):
     monkeypatch.setenv("DEFAULT_BOTTLE_TYPE", "Milk")
     with pytest.raises(SyncError, match="Invalid DEFAULT_BOTTLE_TYPE"):
         Settings.from_env()
+
+
+def test_each_poll_repeats_full_decision_details(caplog):
+    from procareberry.cli import log_poll
+
+    caplog.set_level("INFO")
+    detail = {
+        "result": "conflict",
+        "kind": "sleep",
+        "source": "a" * 12,
+        "start": "2026-10-16T10:00:00-04:00",
+        "end": "2026-10-16T11:00:00-04:00",
+        "reason": "sleep overlaps existing Huckleberry history",
+    }
+    result = {
+        "ok": True,
+        "from": "2026-10-10",
+        "to": "2026-10-16",
+        "counts": {"conflict": 1},
+        "ignored_types": {"photo_activity": 3},
+        "diagnostics": [detail],
+    }
+    log_poll(result)
+    first_poll = list(caplog.messages)
+    assert first_poll[-1] == (
+        "Conflict sleep entry: source=aaaaaaaaaaaa start=2026-10-16T10:00:00-04:00 "
+        "end=2026-10-16T11:00:00-04:00; sleep overlaps existing Huckleberry history"
+    )
+    caplog.clear()
+    log_poll(result)
+    assert caplog.messages == first_poll
+
+
+def test_malformed_activity_log_uses_unavailable_metadata(caplog):
+    from procareberry.cli import log_poll
+    from procareberry.mapping import Mapper
+    from procareberry.models import Report
+
+    caplog.set_level("INFO")
+    report = Report()
+    Mapper("UTC").map(
+        [
+            {
+                "id": "private-id",
+                "activity_type": "bottle_activity",
+                "activity_time": "private invalid date",
+                "comment": "private note",
+            }
+        ],
+        "school",
+        "private-child",
+        "private-target",
+        report,
+    )
+    log_poll(
+        {
+            "ok": True,
+            "from": "2026-10-16",
+            "to": "2026-10-16",
+            "counts": report.counts,
+            "diagnostics": report.diagnostics,
+            "ignored_types": {},
+        },
+    )
+    assert "source=unavailable start=unavailable" in caplog.text
+    assert "private" not in caplog.text

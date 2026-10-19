@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from huckleberry_api.firebase_types import BottleType
 
-from .models import Event, MappingError, Report, fingerprint
+from .models import Event, MappingError, Report, event_details, fingerprint
 
 IGNORED = frozenset(
     {
@@ -202,6 +202,20 @@ class Mapper:
             )
         raise MappingError("unsupported activity type")
 
+    def _diagnostic(self, raw, context, source_child, child_uid):
+        atype = raw.get("activity_type")
+        kind = {
+            "nap_activity": "sleep",
+            "bottle_activity": "bottle",
+            "meal_activity": "solids",
+            "bathroom_activity": "diaper",
+        }.get(atype if isinstance(atype, str) else "", "activity")
+        try:
+            return event_details(self._base(raw, context, source_child, child_uid, kind))
+        except (MappingError, TypeError, ValueError):
+            # Do not include unvalidated source fields, even for malformed records.
+            return {"kind": kind, "source": None, "start": None, "end": None}
+
     def map(self, records, context, source_child, child_uid, report: Report):
         events, open_naps, end_naps = [], [], []
         seen = set()
@@ -222,7 +236,7 @@ class Mapper:
                     continue
                 event = self._default(raw, context, source_child, child_uid)
                 if event.source_key in seen:
-                    report.add("skipped", "duplicate source activity ID")
+                    report.add("skipped", "duplicate source activity ID", detail=event_details(event))
                     continue
                 seen.add(event.source_key)
                 if event.kind == "sleep" and event.values.get("_missing_start"):
@@ -233,15 +247,15 @@ class Mapper:
                     events.append(event)
             except (MappingError, TypeError, ValueError) as exc:
                 reason = str(exc) if isinstance(exc, MappingError) else "invalid source structure"
-                report.add("skipped", reason)
+                report.add("skipped", reason, detail=self._diagnostic(raw, context, source_child, child_uid))
         # Accept only one preceding open start within this child and school.
         for end_event in sorted(end_naps, key=lambda e: e.start):
             if end_event.end is None:
-                report.add("skipped", "nap has no start or end")
+                report.add("skipped", "nap has no start or end", detail=event_details(end_event))
                 continue
             matches = [e for e in open_naps if e.start.timestamp() < end_event.end.timestamp()]
             if len(matches) != 1:
-                report.add("skipped", "ambiguous or missing nap start")
+                report.add("skipped", "ambiguous or missing nap start", detail=event_details(end_event))
                 continue
             start_event = matches[0]
             open_naps.remove(start_event)
@@ -253,8 +267,8 @@ class Mapper:
                     source_ids=start_event.source_ids + end_event.source_ids,
                 )
             )
-        for _ in open_naps:
-            report.add("skipped", "nap is still in progress")
+        for event in open_naps:
+            report.add("skipped", "nap is still in progress", detail=event_details(event))
         result = []
         for event in events:
             if event.end and (
@@ -262,7 +276,7 @@ class Mapper:
                 or event.end.timestamp() == event.start.timestamp()
                 and event.kind == "sleep"
             ):
-                report.add("skipped", "event end must follow start")
+                report.add("skipped", "event end must follow start", detail=event_details(event))
                 continue
             result.append(
                 replace(event, values={k: v for k, v in event.values.items() if not k.startswith("_")})

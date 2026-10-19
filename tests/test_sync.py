@@ -50,6 +50,9 @@ async def test_manual_changes_are_preserved(destination, event, ledger, db, dele
     assert ledger.get(source.source_key)["state"] == "released"
     await syncer.sync(source, report)
     assert (path not in db.data) if deleted else db.data[path]["amount"] == 4
+    assert len(report.diagnostics) == 2
+    assert all(d["reason"] == "imported entry was manually edited or deleted" for d in report.diagnostics)
+    assert all(d["start"] == source.start.isoformat() for d in report.diagnostics)
 
 
 async def test_dry_run_never_writes(destination, event, ledger, db, caplog):
@@ -136,6 +139,16 @@ async def test_sleep_overlap_blocks_import(destination, event, ledger, db):
     report = Report()
     await Synchronizer(destination, ledger, write=True).sync(source, report)
     assert report.counts["conflict"] == 1
+    assert report.diagnostics == [
+        {
+            "result": "conflict",
+            "reason": "sleep overlaps existing Huckleberry history",
+            "kind": "sleep",
+            "source": source.source_key[:12],
+            "start": source.start.isoformat(),
+            "end": source.end.isoformat(),
+        }
+    ]
     assert ledger.get(source.source_key) is None
 
 
