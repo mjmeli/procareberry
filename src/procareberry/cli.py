@@ -84,6 +84,28 @@ async def list_children(settings):
     return await connected(settings, inspect)
 
 
+def log_poll(result):
+    logging.info(
+        "Sync %s [%s to %s]: %s",
+        "complete" if result["ok"] else "needs attention",
+        result["from"],
+        result["to"],
+        json.dumps(result["counts"], sort_keys=True),
+    )
+    if result["ignored_types"]:
+        logging.info("Ignored by type: %s", json.dumps(result["ignored_types"], sort_keys=True))
+    for detail in result["diagnostics"]:
+        logging.info(
+            "%s %s entry: source=%s start=%s%s; %s",
+            detail["result"].capitalize(),
+            detail["kind"],
+            detail["source"] or "unavailable",
+            detail["start"] or "unavailable",
+            f" end={detail['end']}" if detail["end"] else "",
+            detail["reason"],
+        )
+
+
 async def serve(settings):
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -93,15 +115,7 @@ async def serve(settings):
         today = datetime.now(ZoneInfo(settings.timezone)).date()
         try:
             result = await run_window(settings, today - timedelta(days=6), today)
-            logging.info(
-                "Sync %s: %s",
-                "complete" if result["ok"] else "needs attention",
-                json.dumps(result["counts"], sort_keys=True),
-            )
-            if result["ignored_types"]:
-                logging.info("Ignored by type: %s", json.dumps(result["ignored_types"], sort_keys=True))
-            for reason, count in result["reasons"].items():
-                logging.info("%s (%d)", reason, count)
+            log_poll(result)
         except SyncError as exc:
             logging.error("%s", exc)
         try:

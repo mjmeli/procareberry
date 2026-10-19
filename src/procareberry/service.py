@@ -9,7 +9,7 @@ import aiohttp
 from .config import check_window
 from .huckleberry import HistoricalAPI, Huckleberry
 from .mapping import Mapper
-from .models import Event, MappingError, Prepared, Report, SyncError, fingerprint
+from .models import Event, MappingError, Prepared, Report, SyncError, event_details, fingerprint
 from .procare import AiohttpTransport, ProcareClient
 from .storage import Ledger, private_json, read_json
 
@@ -73,7 +73,11 @@ class Synchronizer:
             and self.destination.matches(r, prepared.payload, ignore_offsets=True)
         ]
         if len(new) != 1:
-            report.add("uncertain", "pending write needs manual review; it will not be blindly retried")
+            report.add(
+                "uncertain",
+                "pending write needs manual review; it will not be blindly retried",
+                detail=event_details(event),
+            )
             return None
         if not self.write:
             report.add("preview_recovery")
@@ -99,7 +103,13 @@ class Synchronizer:
         try:
             row = self.ledger.get(event.source_key)
             if row and row["state"] in {"released", "existing"}:
-                report.add("skipped", "entry was manually changed/deleted or already existed")
+                report.add(
+                    "skipped",
+                    "imported entry was manually edited or deleted"
+                    if row["state"] == "released"
+                    else "equivalent entry already exists; no ownership acquired",
+                    detail=event_details(event),
+                )
                 return
             if row and row["state"] == "pending":
                 row = await self._reconcile(row, report)
@@ -112,19 +122,29 @@ class Synchronizer:
                 if record is None or record.version != old["version"] or record.payload != old["payload"]:
                     if self.write:
                         self._put(event, "released", {"reason": "manual edit or deletion"})
-                    report.add("skipped", "imported entry was manually edited or deleted")
+                    report.add(
+                        "skipped",
+                        "imported entry was manually edited or deleted",
+                        detail=event_details(event),
+                    )
                     return
                 if row["signature"] == event.signature:
                     report.add("unchanged")
                     return
                 original = deserialize(old["event"])
                 if original.child_uid != event.child_uid or original.kind != event.kind:
-                    report.add("conflict", "source category or child mapping changed; review manually")
+                    report.add(
+                        "conflict",
+                        "source category or child mapping changed; review manually",
+                        detail=event_details(event),
+                    )
                     return
                 prepared = await self.destination.prepare(event)
                 overlaps = await self.destination.scan(prepared) if event.kind == "sleep" else []
                 if any(r.identity != record.identity for r in overlaps):
-                    report.add("conflict", "corrected sleep overlaps another entry")
+                    report.add(
+                        "conflict", "corrected sleep overlaps another entry", detail=event_details(event)
+                    )
                     return
                 self.preview(event, "update", prepared.payload)
                 if not self.write:
@@ -150,13 +170,19 @@ class Synchronizer:
             prepared = await self.destination.prepare(event)
             before = await self.destination.scan(prepared)
             if event.kind == "sleep" and before:
-                report.add("conflict", "sleep overlaps existing Huckleberry history")
+                report.add(
+                    "conflict", "sleep overlaps existing Huckleberry history", detail=event_details(event)
+                )
                 return
             equivalent = [r for r in before if self.destination.matches(r, prepared.payload)]
             if equivalent:
                 if self.write:
                     self._put(event, "existing", {"reason": "equivalent destination entry"})
-                report.add("skipped", "equivalent entry already exists; no ownership acquired")
+                report.add(
+                    "skipped",
+                    "equivalent entry already exists; no ownership acquired",
+                    detail=event_details(event),
+                )
                 return
             self.preview(event, "create", prepared.payload)
             if not self.write:
@@ -175,7 +201,7 @@ class Synchronizer:
                 report.counts["recovered"] -= 1
                 report.add("created")
         except MappingError as exc:
-            report.add("skipped", str(exc))
+            report.add("skipped", str(exc), detail=event_details(event))
         except Exception as exc:
             # Upstream exceptions may contain patient data or authentication response bodies.
             reason = (
@@ -183,7 +209,7 @@ class Synchronizer:
                 if isinstance(exc, SyncError)
                 else f"destination operation failed ({type(exc).__name__}); retry or inspect status"
             )
-            report.add("failed", reason)
+            report.add("failed", reason, detail=event_details(event))
 
 
 def child_pairs(source, destination, configured):
@@ -245,13 +271,13 @@ async def run_window(settings, start, end, *, preview=None, now=None):
                     if event.kind not in settings.categories:
                         report.add("disabled")
                     elif event.start.date() < start or event.start.date() > end:
-                        report.add("skipped", "event is outside requested dates")
+                        report.add("skipped", "event is outside requested dates", detail=event_details(event))
                     elif (
                         event.start.timestamp() > now.timestamp()
                         or event.end is not None
                         and event.end.timestamp() > now.timestamp()
                     ):
-                        report.add("skipped", "event is not yet completed")
+                        report.add("skipped", "event is not yet completed", detail=event_details(event))
                     else:
                         await syncer.sync(event, report)
             result = {
@@ -265,6 +291,7 @@ async def run_window(settings, start, end, *, preview=None, now=None):
                 "reasons": report.reasons,
                 "source_types": report.source_types,
                 "ignored_types": report.ignored_types,
+                "diagnostics": report.diagnostics,
                 "ledger": ledger.counts(),
             }
             private_json(settings.data_dir / "status.json", result)

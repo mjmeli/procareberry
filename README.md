@@ -45,7 +45,7 @@ Unsupported or unclear activities are skipped and reported while other imports c
    docker compose run --rm procareberry once --dry-run
    ```
 
-   The preview includes proposed times and record contents. Treat its terminal output as private. Routine logs show created, updated, and recovered entries with their category, event times, and a short source reference, plus sync totals, ignored counts by activity type, and reasons for skipped entries. Notes, record contents, and child IDs are omitted.
+   The preview includes proposed times and record contents. Treat its terminal output as private. Routine logs show created, updated, and recovered entries, plus skipped entries and conflicts, with their category, event dates and times (including the timezone offset), and a short source reference. Notes, record contents, and child IDs are omitted.
 
 4. After checking the preview against both apps, set `WRITE_ENABLED=true` in `.env` and start:
 
@@ -107,6 +107,12 @@ Procareberry signs in with your Procare parent email and password. Accounts requ
 - Matching entries already in Huckleberry are skipped and left alone. Sleep records that overlap existing sleep are skipped for review.
 - Daycare corrections carry over only to entries Procareberry created that you have not edited. If you edit or delete an entry in Huckleberry, Procareberry leaves it alone for the rest of the 90-day tracking period.
 - Removing an activity from Procare never deletes it from Huckleberry. Changes to the activity category or child pairing, and corrections that cannot be matched confidently, are flagged for review.
+
+### Polling and logs
+
+Each poll checks the last seven days, so its totals can include activities from earlier days. The summary includes the checked date range; individual decisions show when the activity happened. If an activity has invalid or missing identifying information, its log metadata may say `unavailable`.
+
+Each poll logs its totals, ignored counts by activity type, and every skipped entry or conflict. Those details repeat while the same activities remain in the seven-day window, so the latest poll contains the full picture. Run `status` for the latest totals and decision details.
 
 ### Interrupted imports
 

@@ -324,3 +324,19 @@ def test_explicit_bottle_information_overrides_default(data):
     )[0]
     assert event.values["bottle_type"] == "Formula"
     assert "amount" not in event.values
+
+
+def test_mapping_diagnostics_have_event_dates_without_record_contents():
+    start = record("private-start", data={"start_time": "2026-10-15T10:00:00-04:00"})
+    start["comment"] = "private nap comment"
+    invalid_bottle = record("private-bottle", "bottle_activity", {"desc": "private unknown milk"})
+    report = Report()
+    assert not Mapper("America/New_York").map([start, invalid_bottle], "school", "kid", "child", report)
+    by_kind = {detail["kind"]: detail for detail in report.diagnostics}
+    assert by_kind["sleep"]["start"] == "2026-10-15T10:00:00-04:00"
+    assert by_kind["sleep"]["reason"] == "nap is still in progress"
+    assert by_kind["bottle"]["start"] == "2026-10-16T10:00:00-04:00"
+    assert by_kind["bottle"]["reason"] == "unrecognized bottle description"
+    assert all(len(detail["source"]) == 12 for detail in report.diagnostics)
+    assert "private" not in json.dumps(report.diagnostics)
+    assert "child" not in json.dumps(report.diagnostics)
