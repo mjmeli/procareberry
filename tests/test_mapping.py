@@ -276,3 +276,51 @@ def test_note_unicode_cleanup_preserves_meaning(comment, expected):
 
     assert sanitize_notes(comment) == expected
     assert sanitize_notes(sanitize_notes(comment)) == expected
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {},
+        {"bottle_type": "", "desc": ""},
+        {"bottle_type": "  ", "desc": "\n"},
+        {"bottle_type": None, "desc": None},
+    ],
+)
+def test_optional_bottle_default_only_fills_blank_records(data):
+    raw = record(kind="bottle_activity", data={"amount": "3", **data})
+    assert not Mapper("UTC").map([raw], "s", "kid", "child", Report())
+    event = Mapper("UTC", default_bottle_type="Breast Milk").map([raw], "s", "kid", "child", Report())[0]
+    explicit = record(kind="bottle_activity", data={"amount": "3", "bottle_type": "Breast Milk"})
+    explicit_event = Mapper("UTC").map([explicit], "s", "kid", "child", Report())[0]
+    assert event.values == {"amount": 3, "bottle_type": "Breast Milk", "units": "oz", "notes": ""}
+    assert event.source_key == explicit_event.source_key
+    assert event.signature == explicit_event.signature
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"bottle_type": "unknown"},
+        {"bottle_type": False},
+        {"desc": "Milk"},
+        {"desc": "No breast milk"},
+        {"desc": "Breast milk or formula"},
+        {"desc": []},
+    ],
+)
+def test_default_does_not_replace_invalid_or_ambiguous_bottle_information(data):
+    report = Report()
+    assert not Mapper("UTC", default_bottle_type="Breast Milk").map(
+        [record(kind="bottle_activity", data=data)], "s", "kid", "child", report
+    )
+    assert report.counts == {"skipped": 1}
+
+
+@pytest.mark.parametrize("data", [{"bottle_type": "Formula"}, {"desc": "Had formula"}])
+def test_explicit_bottle_information_overrides_default(data):
+    event = Mapper("UTC", default_bottle_type="Breast Milk").map(
+        [record(kind="bottle_activity", data=data)], "s", "kid", "child", Report()
+    )[0]
+    assert event.values["bottle_type"] == "Formula"
+    assert "amount" not in event.values

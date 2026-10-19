@@ -22,7 +22,7 @@ Procareberry was developed primarily with assistance from OpenAI Codex. I review
 | Activity | What gets imported |
 | --- | --- |
 | Sleep | Completed naps with recorded start and end times |
-| Bottle | Feeds with a recognized milk type; amounts are ounces, and unspecified amounts stay blank |
+| Bottle | Feeds with a recognized milk type or your configured fallback for blank records; amounts are ounces, and unspecified amounts stay blank |
 | Diaper | Wet, dirty, both, or dry diaper changes |
 | Solids | Meals whose food description matches exactly one existing Huckleberry food |
 
@@ -76,6 +76,8 @@ procareberry healthcheck
 
 Bottles use Procare's structured `bottle_type` first. When it is blank, descriptions are checked for Huckleberry labels (`Breast Milk`, `Formula`, `Tube Feeding`, `Cow Milk`, `Goat Milk`, `Soy Milk`, or `Other`) and clear milk names within text. Recognition ignores capitalization and supports aliases such as EBM, expressed milk, cow's milk, and soya milk. `Other` requires an exact label. Unknown structured types, multiple milk types, and negated or ambiguous descriptions are skipped for review. Recorded ounce amounts are preserved; amounts are never inferred from prose.
 
+If your daycare leaves both the milk type and description blank, you can set `DEFAULT_BOTTLE_TYPE=Breast Milk` in `.env`, or choose another label from the list above. Leave it blank to skip these bottles. This setting applies to every selected child and only fills in missing information; explicit types and descriptions still take precedence, and unclear records remain skipped. Review a dry run before enabling it. On the next sync, eligible bottles in the requested date range are reconsidered, with the usual duplicate and manual-edit protections.
+
 Each meal description is matched as a single food name against Huckleberry's existing foods, ignoring capitalization and surrounding whitespace. A meal is imported when exactly one food matches. Unknown or ambiguous names are skipped, and the recorded quantity is preserved in notes.
 
 Activity comments are copied into Huckleberry notes after removing attachment placeholders and nonprinting control characters. Spaces and line endings are normalized, and surrounding whitespace is trimmed. Meaningful line breaks are preserved, with repeated blank lines collapsed to one.
@@ -91,6 +93,7 @@ Activity comments are copied into Huckleberry notes after removing attachment pl
 | `DATA_DIR` | `/data` | Account sessions, sync history, status, and logs |
 | `CHILD_UID_MAP` | `{}` | Explicit source/destination child pairing |
 | `SYNC_CATEGORIES` | All supported categories | Comma-separated allowlist |
+| `DEFAULT_BOTTLE_TYPE` | Unset | Optional milk type when both Procare milk type and description are blank; applies to all selected children |
 | `INTERVAL_MINUTES` | `15` | Poll interval, minimum 5 minutes |
 | `HEALTH_MAX_AGE_HOURS` | `36` | Maximum age of a successful poll |
 

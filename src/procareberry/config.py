@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .mapping import BOTTLE_TYPES
 from .models import KINDS, SyncError
 
 
@@ -23,9 +24,15 @@ class Settings:
     categories: frozenset[str] = KINDS
     interval_minutes: int = 15
     health_max_age_hours: int = 36
+    default_bottle_type: str | None = None
 
     @classmethod
     def from_env(cls):
+        default_type = os.getenv("DEFAULT_BOTTLE_TYPE", "").strip().casefold()
+        if default_type and default_type not in BOTTLE_TYPES:
+            raise SyncError(
+                "Invalid DEFAULT_BOTTLE_TYPE: leave blank or choose " + ", ".join(BOTTLE_TYPES.values())
+            )
         try:
             mapping = json.loads(os.getenv("CHILD_UID_MAP", "{}"))
             if not isinstance(mapping, dict) or not all(
@@ -60,6 +67,7 @@ class Settings:
                 categories=kinds,
                 interval_minutes=interval,
                 health_max_age_hours=age,
+                default_bottle_type=BOTTLE_TYPES.get(default_type),
                 procare_email=os.getenv("PROCARE_EMAIL", ""),
                 procare_password=os.getenv("PROCARE_PASSWORD", ""),
                 huckleberry_email=os.getenv("HUCKLEBERRY_EMAIL", ""),

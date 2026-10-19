@@ -94,3 +94,19 @@ def test_cli_help_and_old_backfill_need_no_credentials(tmp_path):
     )
     assert old.returncode == 1 and "90" in old.stderr
     assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [("", None), ("  ", None), (" breast MILK ", "Breast Milk"), ("Formula", "Formula"), ("Other", "Other")],
+)
+def test_optional_bottle_default_configuration(monkeypatch, value, expected):
+    monkeypatch.setenv("DEFAULT_BOTTLE_TYPE", value)
+    settings = Settings.from_env()
+    assert settings.default_bottle_type == expected
+
+
+def test_invalid_bottle_default_configuration(monkeypatch):
+    monkeypatch.setenv("DEFAULT_BOTTLE_TYPE", "Milk")
+    with pytest.raises(SyncError, match="Invalid DEFAULT_BOTTLE_TYPE"):
+        Settings.from_env()

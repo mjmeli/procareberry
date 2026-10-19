@@ -236,7 +236,7 @@ async def run_window(settings, start, end, *, preview=None, now=None):
         report = Report()
         try:
             ledger.prune(today)
-            mapper = Mapper(settings.timezone)
+            mapper = Mapper(settings.timezone, default_bottle_type=settings.default_bottle_type)
             syncer = Synchronizer(destination, ledger, write=settings.write_enabled, preview=preview)
             for source_child, target_child in pairs.items():
                 records = await source.activities(source_child, start, end)

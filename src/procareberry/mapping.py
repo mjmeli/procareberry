@@ -35,7 +35,7 @@ BOTTLE_PATTERNS = {
 }
 
 
-def bottle_type(data):
+def bottle_type(data, *, default=None):
     """Prefer an explicit type; infer only one unambiguous type from free text."""
     structured = data.get("bottle_type")
     if structured is not None and structured != "":
@@ -44,6 +44,8 @@ def bottle_type(data):
         if structured.strip():
             return detect_bottle_type(structured, structured=True)
     description = data.get("desc")
+    if default and (description is None or isinstance(description, str) and not description.strip()):
+        return detect_bottle_type(default, structured=True)
     if not isinstance(description, str):
         raise MappingError("missing bottle description")
     return detect_bottle_type(description)
@@ -122,8 +124,9 @@ def number(value, label, *, positive=False):
 
 
 class Mapper:
-    def __init__(self, timezone_name):
+    def __init__(self, timezone_name, *, default_bottle_type=None):
         self.tz = ZoneInfo(timezone_name)
+        self.default_bottle_type = default_bottle_type
 
     def _base(self, raw, context, source_child, child_uid, kind):
         identifier = raw.get("id")
@@ -160,7 +163,7 @@ class Mapper:
             )
         if atype == "bottle_activity":
             event = self._base(raw, context, source_child, child_uid, "bottle")
-            milk_type = bottle_type(data)
+            milk_type = bottle_type(data, default=self.default_bottle_type)
             # The supported parent feed reports bottle amounts in ounces.
             values = {"bottle_type": milk_type, "units": "oz", "notes": comment}
             if data.get("amount") not in (None, ""):
