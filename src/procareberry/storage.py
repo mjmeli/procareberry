@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .models import SyncError, encoded
+from .models import SyncError, encoded, fingerprint
 
 
 def private_json(path: Path, data: dict) -> None:
@@ -54,7 +54,7 @@ def writer_lock(directory: Path):
 
 
 class Ledger:
-    def __init__(self, path: Path, binding: str, *, legacy_bindings=()):
+    def __init__(self, path: Path, binding: str, *, legacy_binding=None, source_scope=None):
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
@@ -74,15 +74,46 @@ class Ledger:
             PRAGMA user_version=1;
         """)
         stored = self.db.execute("SELECT value FROM metadata WHERE key='binding'").fetchone()
-        if stored and stored[0] != binding and stored[0] not in legacy_bindings:
+        scoped = self.db.execute("SELECT value FROM metadata WHERE key='child_binding'").fetchone()
+        matches = not stored or stored[0] == binding
+        if not scoped and source_scope is not None and not matches:
+            matches = stored[0] == legacy_binding or self._legacy_matches(*source_scope)
+        if not matches or scoped and scoped[0] != binding:
             self.db.close()
             raise SyncError(
-                "This ledger belongs to different accounts; to switch Procare logins for the same children, "
-                "run switch-procare-account --previous-email with the previous Procare email; "
-                "otherwise use the original configuration or a separate data directory"
+                "This ledger belongs to different accounts or children; "
+                "use the original configuration or a separate data directory"
             )
         self.db.execute("INSERT OR REPLACE INTO metadata VALUES ('binding', ?)", (binding,))
+        if source_scope is not None:
+            self.db.execute("INSERT OR REPLACE INTO metadata VALUES ('child_binding', ?)", (binding,))
         self.db.commit()
+
+    def _legacy_matches(self, school, pairs):
+        # Old bindings are one-way hashes that include the parent's email. Prove
+        # ownership from saved event identities instead; no remote history is needed.
+        for row in self.db.execute("SELECT source_key,state,body FROM events"):
+            if row["state"] in {"released", "existing"}:
+                # These rows only prevent writes. Preserve them even when the
+                # source activity disappeared; they carry no destination ownership.
+                continue
+            if row["state"] not in {"owned", "pending"}:
+                return False
+            try:
+                event = json.loads(row["body"])["event"]
+                source_ids = event["source_ids"]
+                if not isinstance(source_ids, list) or not source_ids:
+                    return False
+                if event["source_key"] != row["source_key"] or not any(
+                    event["child_uid"] == target
+                    and fingerprint([school, child, source_ids[0]]) == row["source_key"]
+                    for child, target in pairs.items()
+                ):
+                    return False
+            except (ValueError, KeyError, TypeError):
+                return False
+        # Empty histories and histories with no owned writes can bind safely.
+        return True
 
     def get(self, source_key: str) -> dict | None:
         row = self.db.execute("SELECT * FROM events WHERE source_key=?", (source_key,)).fetchone()
