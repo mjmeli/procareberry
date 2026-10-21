@@ -54,7 +54,7 @@ def writer_lock(directory: Path):
 
 
 class Ledger:
-    def __init__(self, path: Path, binding: str):
+    def __init__(self, path: Path, binding: str, *, legacy_bindings=()):
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
@@ -74,12 +74,14 @@ class Ledger:
             PRAGMA user_version=1;
         """)
         stored = self.db.execute("SELECT value FROM metadata WHERE key='binding'").fetchone()
-        if stored and stored[0] != binding:
+        if stored and stored[0] != binding and stored[0] not in legacy_bindings:
             self.db.close()
             raise SyncError(
-                "This ledger belongs to different accounts; use their original configuration or a separate data directory"
+                "This ledger belongs to different accounts; to switch Procare logins for the same children, "
+                "run switch-procare-account --previous-email with the previous Procare email; "
+                "otherwise use the original configuration or a separate data directory"
             )
-        self.db.execute("INSERT OR IGNORE INTO metadata VALUES ('binding', ?)", (binding,))
+        self.db.execute("INSERT OR REPLACE INTO metadata VALUES ('binding', ?)", (binding,))
         self.db.commit()
 
     def get(self, source_key: str) -> dict | None:

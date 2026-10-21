@@ -246,6 +246,33 @@ async def connected(settings, callback):
                 client.close()
 
 
+def account_ledger(settings, source, destination, pairs, *, previous_email=None):
+    # Ownership follows the school and children, rather than a parent's login.
+    scope = [destination.api.user_uid, source.base, pairs]
+    legacy_emails = [settings.procare_email]
+    if previous_email is not None:
+        legacy_emails.append(previous_email)
+    return Ledger(
+        settings.data_dir / "sync.sqlite3",
+        fingerprint(["child-scope-v2", *scope]),
+        legacy_bindings=[fingerprint([email.casefold(), *scope]) for email in legacy_emails],
+    )
+
+
+async def switch_procare_account(settings, previous_email):
+    if not previous_email.strip():
+        raise SyncError("Supply the previous Procare email")
+    if not (settings.data_dir / "sync.sqlite3").is_file():
+        raise SyncError("No sync history found; use the existing data directory when switching accounts")
+
+    async def work(source, destination):
+        pairs = child_pairs(await source.children(), await destination.children(), settings.child_map)
+        ledger = account_ledger(settings, source, destination, pairs, previous_email=previous_email)
+        ledger.close()
+
+    await connected(settings, work)
+
+
 async def run_window(settings, start, end, *, preview=None, now=None):
     now = now or datetime.now(ZoneInfo(settings.timezone))
     today = now.astimezone(ZoneInfo(settings.timezone)).date()
@@ -254,11 +281,7 @@ async def run_window(settings, start, end, *, preview=None, now=None):
 
     async def work(source, destination):
         pairs = child_pairs(await source.children(), await destination.children(), settings.child_map)
-        # Binding includes account and selected children, so a configuration change cannot redirect ownership.
-        binding = fingerprint(
-            [settings.procare_email.casefold(), destination.api.user_uid, source.base, pairs]
-        )
-        ledger = Ledger(settings.data_dir / "sync.sqlite3", binding)
+        ledger = account_ledger(settings, source, destination, pairs)
         report = Report()
         try:
             ledger.prune(today)

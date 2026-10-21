@@ -99,6 +99,27 @@ def test_cli_help_and_old_backfill_need_no_credentials(tmp_path):
     assert not list(tmp_path.iterdir())
 
 
+def test_cli_switch_procare_account(monkeypatch, tmp_path, capsys):
+    from unittest.mock import AsyncMock
+
+    from procareberry import cli
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("PROCARE_EMAIL", "new@example.com")
+    monkeypatch.setenv("WRITE_ENABLED", "true")
+    monkeypatch.setattr(
+        sys, "argv", ["procareberry", "switch-procare-account", "--previous-email", "old@example.com"]
+    )
+    switch = AsyncMock()
+    monkeypatch.setattr(cli, "switch_procare_account", switch)
+    monkeypatch.setattr(cli, "configure_logging", lambda directory: None)
+    cli.main()
+    switch.assert_awaited_once()
+    settings, previous_email = switch.call_args.args
+    assert settings.procare_email == "new@example.com" and previous_email == "old@example.com"
+    assert "sync history preserved" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize(
     "value,expected",
     [("", None), ("  ", None), (" breast MILK ", "Breast Milk"), ("Formula", "Formula"), ("Other", "Other")],

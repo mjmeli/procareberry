@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 from .config import Settings, check_window
 from .models import SyncError
-from .service import connected, health, run_window
+from .service import connected, health, run_window, switch_procare_account
 from .storage import read_json, writer_lock
 
 
@@ -23,6 +23,10 @@ def parser():
     )
     commands = root.add_subparsers(dest="command", required=True)
     commands.add_parser("children", help="List child IDs for explicit account mapping")
+    switch = commands.add_parser(
+        "switch-procare-account", help="Keep sync history when changing Procare logins for the same children"
+    )
+    switch.add_argument("--previous-email", required=True, help="Previous Procare login email")
     for command in ("once", "backfill"):
         sub = commands.add_parser(command)
         sub.add_argument("--days", type=int, default=7)
@@ -150,6 +154,9 @@ def main():
         with writer_lock(settings.data_dir):
             if args.command == "children":
                 print(json.dumps(asyncio.run(list_children(settings)), indent=2))
+            elif args.command == "switch-procare-account":
+                asyncio.run(switch_procare_account(settings, args.previous_email))
+                print("Procare login switch verified; sync history preserved. No entries were written.")
             elif args.command == "serve":
                 asyncio.run(serve(settings))
             else:
