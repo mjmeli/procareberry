@@ -246,6 +246,17 @@ async def connected(settings, callback):
                 client.close()
 
 
+def account_ledger(settings, source, destination, pairs):
+    # The source school/child IDs and destination identity define ownership.
+    scope = [destination.api.user_uid, source.base, pairs]
+    return Ledger(
+        settings.data_dir / "sync.sqlite3",
+        fingerprint(["child-scope-v2", *scope]),
+        legacy_binding=fingerprint([settings.procare_email.casefold(), *scope]),
+        source_scope=(source.base, pairs),
+    )
+
+
 async def run_window(settings, start, end, *, preview=None, now=None):
     now = now or datetime.now(ZoneInfo(settings.timezone))
     today = now.astimezone(ZoneInfo(settings.timezone)).date()
@@ -254,11 +265,7 @@ async def run_window(settings, start, end, *, preview=None, now=None):
 
     async def work(source, destination):
         pairs = child_pairs(await source.children(), await destination.children(), settings.child_map)
-        # Binding includes account and selected children, so a configuration change cannot redirect ownership.
-        binding = fingerprint(
-            [settings.procare_email.casefold(), destination.api.user_uid, source.base, pairs]
-        )
-        ledger = Ledger(settings.data_dir / "sync.sqlite3", binding)
+        ledger = account_ledger(settings, source, destination, pairs)
         report = Report()
         try:
             ledger.prune(today)

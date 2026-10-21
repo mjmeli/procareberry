@@ -4,6 +4,7 @@ import pytest
 
 from procareberry.models import SyncError
 from procareberry.procare import AUTH_URL, ProcareClient, api_host
+from procareberry.storage import private_json
 
 
 class Transport:
@@ -42,6 +43,24 @@ async def test_school_discovery_pagination_and_saved_session(tmp_path):
     assert transport.calls[1][1].startswith("https://api-school.test.procareconnect.com/")
     restored = ProcareClient(Transport([]), "fake", "fake", tmp_path / "token.json", sleep=no_sleep)
     assert restored.token == "synthetic-token"
+
+
+async def test_changed_login_authenticates_new_parent_before_listing_children(tmp_path):
+    token_file = tmp_path / "token.json"
+    private_json(
+        token_file,
+        {
+            "email": "old@example.com",
+            "token": "old-synthetic-token",
+            "base": "https://api-school.test.procareconnect.com/api/web/",
+        },
+    )
+    transport = Transport([login(), (200, {"kids": [{"id": "kid"}]})])
+    client = ProcareClient(transport, "new@example.com", "new-fake-password", token_file)
+    assert await client.children() == [{"id": "kid"}]
+    assert transport.calls[0][0:2] == ("POST", AUTH_URL)
+    assert transport.calls[0][2]["payload"]["email"] == "new@example.com"
+    assert transport.calls[1][2]["headers"]["Authorization"] == "Bearer synthetic-token"
 
 
 async def test_session_expiry_and_bounded_backoff(tmp_path):
