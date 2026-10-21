@@ -131,14 +131,6 @@ Procareberry keeps **90 days of sync history** and automatically removes older t
 
 Run only one syncing instance per data directory; Procareberry blocks a second one. Separate installations do not coordinate, so avoid running them against the same child.
 
-### Switching Procare logins
-
-You can switch between parents' Procare logins when they access the same school and children. Keep the same Huckleberry account, child pairings, and `/data` directory to preserve duplicate prevention and protection for manual edits and deletions.
-
-Update `PROCARE_EMAIL` and `PROCARE_PASSWORD`, then recreate the container with `docker compose up -d`. Procareberry checks the school and child IDs and keeps your existing sync history automatically.
-
-Older sync history is checked against its tracked activities when the login changes. Entries you edited, deleted, or already had remain protected. If saved import details identify a different school or child pairing, syncing stops; restore the matching configuration or use a separate data directory. Do not delete sync history to bypass this check.
-
 ## Development and releases
 
 ```sh
