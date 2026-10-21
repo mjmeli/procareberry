@@ -135,93 +135,41 @@ async def test_blank_bottle_default_reruns_corrections_and_manual_changes(
     assert db.data[path]["amount"] == 7 if manual_change == "edit" else path not in db.data
 
 
-@pytest.mark.parametrize("changed", [None, "school", "source_child", "target_child", "malformed"])
-def test_legacy_login_change_checks_child_identity(tmp_path, event, changed):
-    settings = Settings(data_dir=tmp_path, procare_email="new@example.com")
+@pytest.mark.parametrize("changed", ["school", "source_child", "target_child", "destination"])
+def test_child_scope_rejects_unrelated_configuration(tmp_path, changed):
+    settings = Settings(data_dir=tmp_path, procare_email="old@example.com")
     source = SimpleNamespace(base="school")
     destination = SimpleNamespace(api=SimpleNamespace(user_uid="target-account"))
     pairs = {"kid": "child"}
-    legacy = fingerprint(["old@example.com", "target-account", "school", pairs])
-    ledger = Ledger(tmp_path / "sync.sqlite3", legacy)
-    states = ["owned", "pending", "released", "existing"]
-    rows = {}
-    for state in states:
-        key = fingerprint(["school", "kid", state])
-        body = {"event": service.serialize(event(key=key))}
-        body["event"]["source_ids"] = [state]
-        if state in {"released", "existing"}:
-            body = {"reason": "manual change or equivalent entry"}
-        if changed == "malformed" and state == "pending":
-            body = {}
-        ledger.put(key, "2026-10-16", state, "signature", body)
-        rows[key] = ledger.get(key)
-    ledger.close()
+    service.account_ledger(settings, source, destination, pairs).close()
     if changed == "school":
         source.base = "other-school"
     elif changed == "source_child":
         pairs = {"other-kid": "child"}
     elif changed == "target_child":
         pairs = {"kid": "other-child"}
-    if changed:
-        with pytest.raises(SyncError, match="different accounts or children"):
-            service.account_ledger(settings, source, destination, pairs)
-        ledger = Ledger(tmp_path / "sync.sqlite3", legacy)
     else:
-        # No previous email, saved Procare token, or historical feed is needed.
-        ledger = service.account_ledger(settings, source, destination, pairs)
-    try:
-        for key, row in rows.items():
-            assert ledger.get(key) == row
-    finally:
-        ledger.close()
+        destination.api.user_uid = "other-account"
+    with pytest.raises(SyncError, match="different accounts or children"):
+        service.account_ledger(settings, source, destination, pairs)
 
 
-@pytest.mark.parametrize("nonowned_only", [False, True])
-def test_empty_or_nonowned_legacy_history_upgrades_automatically(tmp_path, nonowned_only):
-    settings = Settings(data_dir=tmp_path, procare_email="new@example.com")
+@pytest.mark.parametrize("state", [None, "owned", "released"])
+def test_old_email_binding_is_rejected_without_changing_history(tmp_path, state):
+    settings = Settings(data_dir=tmp_path, procare_email="old@example.com")
     source = SimpleNamespace(base="school")
     destination = SimpleNamespace(api=SimpleNamespace(user_uid="target-account"))
     pairs = {"kid": "child"}
-    ledger = Ledger(tmp_path / "sync.sqlite3", "unknown-old-email-binding")
-    if nonowned_only:
-        ledger.put("deleted-source-key", "2026-10-16", "released", "sig", {"reason": "manual deletion"})
-        ledger.put("existing-key", "2026-10-16", "existing", "sig", {"reason": "equivalent entry"})
+    old_binding = fingerprint([settings.procare_email, "target-account", "school", pairs])
+    ledger = Ledger(tmp_path / "sync.sqlite3", old_binding)
+    if state:
+        ledger.put("event", "2026-10-16", state, "signature", {"reason": "preserved"})
+    original = ledger.get("event")
     ledger.close()
-    ledger = service.account_ledger(settings, source, destination, pairs)
-    if nonowned_only:
-        assert ledger.get("deleted-source-key")["state"] == "released"
-        assert ledger.get("existing-key")["state"] == "existing"
-    ledger.close()
-    # A migrated scope remains strict, even when there are no owned events.
-    for other_pairs in ({"other-kid": "child"}, {"kid": "other-child"}):
-        with pytest.raises(SyncError, match="different accounts"):
-            service.account_ledger(settings, source, destination, other_pairs)
-    source.base = "other-school"
-    with pytest.raises(SyncError, match="different accounts"):
+    with pytest.raises(SyncError, match="different accounts or children"):
         service.account_ledger(settings, source, destination, pairs)
-    source.base = "school"
-    destination.api.user_uid = "other-account"
-    with pytest.raises(SyncError, match="different accounts"):
-        service.account_ledger(settings, source, destination, pairs)
-
-
-def test_legacy_migration_checks_all_children_and_paired_naps(tmp_path, event):
-    settings = Settings(data_dir=tmp_path, procare_email="new@example.com")
-    source = SimpleNamespace(base="school")
-    destination = SimpleNamespace(api=SimpleNamespace(user_uid="target-account"))
-    pairs = {"kid": "child", "sibling": "other-child"}
-    legacy = fingerprint(["old@example.com", "target-account", "school", pairs])
-    ledger = Ledger(tmp_path / "sync.sqlite3", legacy)
-    for child, target in pairs.items():
-        key = fingerprint(["school", child, "nap-start"])
-        nap = event("sleep", end="2026-10-16T11:00:00-04:00", key=key)
-        nap = replace(nap, child_uid=target, source_ids=("nap-start", "nap-end"))
-        ledger.put(key, "2026-10-16", "owned", nap.signature, {"event": service.serialize(nap)})
-    ledger.close()
-    with pytest.raises(SyncError, match="different accounts"):
-        service.account_ledger(settings, source, destination, {"kid": "child"})
-    ledger = service.account_ledger(settings, source, destination, pairs)
-    assert ledger.counts() == {"owned": 2}
+    ledger = Ledger(tmp_path / "sync.sqlite3", old_binding)
+    assert ledger.get("event") == original
     ledger.close()
 
 
@@ -232,8 +180,11 @@ async def test_sync_after_automatic_account_switch(tmp_path, destination, event,
     destination.api.user_uid = "target-account"
     destination.children = AsyncMock(return_value=[{"id": "child"}])
 
-    legacy = fingerprint(["old@example.com", "target-account", "school", {"kid": "child"}])
-    ledger = Ledger(tmp_path / "sync.sqlite3", legacy)
+    binding = fingerprint(["child-scope-v2", "target-account", "school", {"kid": "child"}])
+    ledger = Ledger(tmp_path / "sync.sqlite3", binding)
+    # Match the metadata written by the already-deployed migration image.
+    ledger.db.execute("INSERT INTO metadata VALUES ('child_binding', ?)", (binding,))
+    ledger.db.commit()
     key = fingerprint(["school", "kid", "event-1"])
     current = event(key=key)
     current = replace(current, source_ids=("event-1",))

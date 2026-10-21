@@ -252,8 +252,6 @@ def account_ledger(settings, source, destination, pairs):
     return Ledger(
         settings.data_dir / "sync.sqlite3",
         fingerprint(["child-scope-v2", *scope]),
-        legacy_binding=fingerprint([settings.procare_email.casefold(), *scope]),
-        source_scope=(source.base, pairs),
     )
 
 
