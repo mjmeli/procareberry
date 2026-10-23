@@ -51,7 +51,7 @@ def test_split_nap_identity_stays_anchored_to_start():
 def test_ambiguous_and_other_child_naps_not_paired():
     mapper, report = Mapper("America/New_York"), Report()
     rows = [
-        record("start-1", data={"start_time": "2026-10-16T09:00:00-04:00"}),
+        record("start-1", data={"start_time": "2026-10-16T10:00:00-04:00"}),
         record("start-2", data={"start_time": "2026-10-16T10:00:00-04:00"}),
         record("end", data={"end_time": "2026-10-16T11:00:00-04:00"}),
         record("other", data={"end_time": "2026-10-16T11:00:00-04:00"}, child="other"),
@@ -59,6 +59,47 @@ def test_ambiguous_and_other_child_naps_not_paired():
     assert mapper.map(rows, "s", "kid", "child", report) == []
     assert "ambiguous or missing nap start" in report.reasons
     assert "activity belongs to another child" in report.reasons
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_split_nap_pairs_latest_start_despite_stale_starts(reverse):
+    rows = [
+        record("previous-day", data={"start_time": "2026-10-15T14:00:00-04:00"}),
+        record("earlier", data={"start_time": "2026-10-16T09:00:00-04:00"}),
+        record("start", data={"start_time": "2026-10-16T10:00:00-04:00"}),
+        record("end", data={"end_time": "2026-10-16T11:00:00-04:00"}),
+        record("future", data={"start_time": "2026-10-16T12:00:00-04:00"}),
+        record("other-child", data={"start_time": "2026-10-16T10:30:00-04:00"}, child="other"),
+    ]
+    report = Report()
+    events = Mapper("America/New_York").map(
+        list(reversed(rows)) if reverse else rows, "s", "kid", "child", report
+    )
+    assert len(events) == 1
+    assert events[0].source_ids == ("start", "end")
+    assert events[0].start.isoformat() == "2026-10-16T10:00:00-04:00"
+    assert events[0].end.isoformat() == "2026-10-16T11:00:00-04:00"
+    assert report.reasons == {"activity belongs to another child": 1, "nap is still in progress": 3}
+
+
+def test_split_naps_use_end_times_and_do_not_reuse_stale_starts():
+    rows = [
+        record("stale", data={"start_time": "2026-10-15T14:00:00-04:00"}),
+        record("morning-start", data={"start_time": "2026-10-16T10:00:00-04:00"}),
+        record("afternoon-start", data={"start_time": "2026-10-16T13:00:00-04:00"}),
+        record("afternoon-end", data={"end_time": "2026-10-16T14:00:00-04:00"}),
+        record("extra-end", data={"end_time": "2026-10-16T11:30:00-04:00"}),
+        record("morning-end", data={"end_time": "2026-10-16T11:00:00-04:00"}),
+    ]
+    # Publication times can differ from recorded nap times.
+    rows[-1]["activity_time"] = "2026-10-16T15:00:00-04:00"
+    report = Report()
+    events = Mapper("America/New_York").map(rows, "s", "kid", "child", report)
+    assert [e.source_ids for e in events] == [
+        ("morning-start", "morning-end"),
+        ("afternoon-start", "afternoon-end"),
+    ]
+    assert report.reasons == {"ambiguous or missing nap start": 1, "nap is still in progress": 1}
 
 
 def test_missing_id_and_invalid_volume_skipped():

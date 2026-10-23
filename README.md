@@ -21,12 +21,14 @@ Procareberry was developed primarily with assistance from OpenAI Codex. I review
 
 | Activity | What gets imported |
 | --- | --- |
-| Sleep | Completed naps with recorded start and end times |
+| Sleep | Completed naps, including those recorded as separate start and end events |
 | Bottle | Feeds with a recognized milk type or your configured fallback for blank records; amounts are ounces, and unspecified amounts stay blank |
 | Diaper | Wet, dirty, both, or dry diaper changes |
 | Solids | Meals whose food description matches exactly one existing Huckleberry food |
 
 Unsupported or unclear activities are skipped and reported while other imports continue. Potty, health, nursing, pumping, and general activity records are not supported. Attendance, media, messages, and administrative records are not imported.
+
+Unfinished naps are skipped until an end is recorded. If a nap cannot be matched confidently, it is skipped for review. Naps you add manually in Huckleberry are left alone, and overlapping naps are not imported.
 
 ## Docker quick start
 
