@@ -248,17 +248,25 @@ class Mapper:
             except (MappingError, TypeError, ValueError) as exc:
                 reason = str(exc) if isinstance(exc, MappingError) else "invalid source structure"
                 report.add("skipped", reason, detail=self._diagnostic(raw, context, source_child, child_uid))
-        # Accept only one preceding open start within this child and school.
-        for end_event in sorted(end_naps, key=lambda e: e.start):
+        # Pair in end-time order with the latest unmatched start for this child and school.
+        paired_until = float("-inf")
+        for end_event in sorted(end_naps, key=lambda e: (e.end or e.start).timestamp()):
             if end_event.end is None:
                 report.add("skipped", "nap has no start or end", detail=event_details(end_event))
                 continue
-            matches = [e for e in open_naps if e.start.timestamp() < end_event.end.timestamp()]
+            matches = [
+                e for e in open_naps if paired_until <= e.start.timestamp() < end_event.end.timestamp()
+            ]
+            if matches:
+                latest = max(e.start.timestamp() for e in matches)
+                matches = [e for e in matches if e.start.timestamp() == latest]
             if len(matches) != 1:
                 report.add("skipped", "ambiguous or missing nap start", detail=event_details(end_event))
                 continue
             start_event = matches[0]
             open_naps.remove(start_event)
+            # Extra end records must not fall back to stale starts and invent overlapping naps.
+            paired_until = end_event.end.timestamp()
             events.append(
                 replace(
                     start_event,

@@ -2,6 +2,7 @@ from dataclasses import replace
 
 import pytest
 
+from procareberry.mapping import Mapper
 from procareberry.models import Report
 from procareberry.service import Synchronizer
 from procareberry.storage import Ledger
@@ -150,6 +151,48 @@ async def test_sleep_overlap_blocks_import(destination, event, ledger, db):
         }
     ]
     assert ledger.get(source.source_key) is None
+
+
+@pytest.mark.parametrize("manual", [False, True])
+async def test_split_nap_with_stale_start_preserves_manual_sleep_and_reruns(destination, ledger, db, manual):
+    rows = [
+        {
+            "id": identifier,
+            "kid_id": "kid",
+            "activity_type": "nap_activity",
+            "activity_time": when,
+            "data": {field: when},
+        }
+        for identifier, field, when in [
+            ("stale", "start_time", "2026-10-15T14:00:00-04:00"),
+            ("start", "start_time", "2026-10-16T10:00:00-04:00"),
+            ("end", "end_time", "2026-10-16T11:00:00-04:00"),
+        ]
+    ]
+    mapper = Mapper("America/New_York")
+    source = mapper.map(rows, "school", "kid", "child", Report())[0]
+    manual_path = "sleep/child/intervals/manual"
+    manual_payload = {"start": source.start.timestamp(), "duration": 3600, "offset": 240}
+    if manual:
+        db.write(manual_path, manual_payload)
+    initial_writes = db.write_count
+    syncer, report = Synchronizer(destination, ledger, write=True), Report()
+    await syncer.sync(source, report)
+    await syncer.sync(source, report)
+    rows[-1]["data"]["end_time"] = "2026-10-16T11:15:00-04:00"
+    corrected = mapper.map(rows, "school", "kid", "child", Report())[0]
+    assert corrected.source_key == source.source_key
+    await syncer.sync(corrected, report)
+    assert len([p for p in db.data if p.startswith("sleep/child/intervals/")]) == 1
+    if manual:
+        assert db.data[manual_path] == manual_payload
+        assert db.write_count == initial_writes
+        assert ledger.get(source.source_key) is None
+        assert report.counts["conflict"] == 3
+    else:
+        assert report.counts["created"] == report.counts["unchanged"] == report.counts["updated"] == 1
+        path = ledger.get(source.source_key)["body"]["path"]
+        assert db.data[path]["duration"] == 4500
 
 
 async def test_failed_history_read_blocks_import(destination, event, ledger, db):
