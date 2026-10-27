@@ -13,7 +13,7 @@ from huckleberry_api import firebase_types as ft
 from huckleberry_api.models import SolidsFoodReference
 
 from .mapping import number
-from .models import Event, MappingError, Prepared, Record, SyncError
+from .models import CorrectionConflict, Event, MappingError, Prepared, Record, SyncError
 from .storage import private_json, read_json
 
 _historical_time = contextvars.ContextVar("procareberry_historical_time", default=None)
@@ -311,12 +311,49 @@ class Huckleberry:
                 batch.create(root, {"prefs": {"lastBottle": summary}})
         await batch.commit()
 
+    async def _check_time_correction(self, root, last, previous, prepared):
+        """Move the latest summary only if history confirms it will remain latest."""
+        old_start, new_start = previous.payload["start"], prepared.payload["start"]
+        if old_start == new_start:
+            return
+        last_start = last.get("start")
+        if not isinstance(last_start, (int, float)):
+            raise CorrectionConflict(
+                "Latest-event summary is missing or unclear; review the correction manually"
+            )
+        if last_start != old_start:
+            if new_start >= last_start or old_start > last_start:
+                raise CorrectionConflict("Correction changes the latest event; review it manually")
+            return
+        collection = root.collection("intervals")
+        # Batched records may have no top-level start, so inspect them separately.
+        for stream in (
+            collection.where(filter=FieldFilter("start", ">=", min(old_start, new_start))).stream(),
+            collection.where(filter=FieldFilter("multi", "==", True)).stream(),
+        ):
+            async for snapshot in stream:
+                if snapshot.reference.path == previous.path:
+                    continue
+                raw = snapshot.to_dict()
+                entries = raw["data"].values() if raw.get("multi") is True else [raw]
+                for entry in entries:
+                    kind = prepared.event.kind
+                    if kind in MODES and entry.get("mode") != MODES[kind]:
+                        continue
+                    if kind == "diaper" and entry.get("isPotty"):
+                        continue
+                    when = float(entry["start"])
+                    if when >= new_start or when == old_start:
+                        raise CorrectionConflict("Correction changes the latest event; review it manually")
+
     async def correct(self, previous: Record, prepared: Prepared):
         if previous.nested_key:
-            raise SyncError("An imported entry was moved into a batch; review its correction manually")
+            raise CorrectionConflict(
+                "An imported entry was moved into a batch; review its correction manually"
+            )
         old_kind_top = previous.path.split("/")[0]
         if old_kind_top != LOCATIONS[prepared.event.kind][0]:
-            raise SyncError("Source category changed; review the existing entry manually")
+            raise CorrectionConflict("Source category changed; review the existing entry manually")
         client = await self._client()
         ref = client.document(previous.path)
         payload = {**previous.payload, **prepared.payload, "lastUpdated": time.time()}
@@ -333,11 +370,10 @@ class Huckleberry:
         parent_raw = parent.to_dict() or {}
         last_field = LAST_FIELDS[prepared.event.kind]
         last = (parent_raw.get("prefs") or {}).get(last_field) or {}
-        # Correct a summary only when it clearly points at this old entry and is not moving before another event.
+        await self._check_time_correction(root, last, previous, prepared)
+        # Preserve summary fields that are unrelated to this import.
         summary_changes = {}
         if last and last.get("start") == previous.payload.get("start"):
-            if payload["start"] != previous.payload["start"]:
-                raise SyncError("Correction moves the latest event; review its summary manually")
             field_map = (
                 {"amount": "bottleAmount", "units": "bottleUnits", "bottleType": "bottleType"}
                 if prepared.event.kind == "bottle"
@@ -348,7 +384,9 @@ class Huckleberry:
                 if summary_key in last and key != "lastUpdated":
                     old_value = previous.payload.get(key)
                     if last[summary_key] != old_value:
-                        raise SyncError("Latest-event summary was edited; review the correction manually")
+                        raise CorrectionConflict(
+                            "Latest-event summary was edited; review the correction manually"
+                        )
                     summary_changes[f"prefs.{last_field}.{summary_key}"] = value
         batch = client.batch()
         # set with a version precondition is unavailable; use update plus field deletions.
@@ -363,13 +401,22 @@ class Huckleberry:
                 )
                 if summary_key in last:
                     if last[summary_key] != previous.payload[key]:
-                        raise SyncError("Latest-event summary was edited; review the correction manually")
+                        raise CorrectionConflict(
+                            "Latest-event summary was edited; review the correction manually"
+                        )
                     summary_changes[f"prefs.{last_field}.{summary_key}"] = DELETE_FIELD
 
         changes = {**payload, **{k: DELETE_FIELD for k in previous.payload if k not in payload}}
         batch.update(ref, changes, option=LastUpdateOption(previous.update_time))
         if summary_changes:
             batch.update(root, summary_changes, option=LastUpdateOption(parent.update_time))
+        elif payload["start"] != previous.payload["start"]:
+            # A newer summary must also stay unchanged between the check and commit.
+            batch.update(
+                root,
+                {f"prefs.{last_field}.start": last["start"]},
+                option=LastUpdateOption(parent.update_time),
+            )
         await batch.commit()
         return await self.read(previous.path)
 

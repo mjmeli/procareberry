@@ -1,4 +1,5 @@
 from dataclasses import replace
+from datetime import datetime
 
 import pytest
 
@@ -241,3 +242,160 @@ async def test_ambiguous_new_records_stay_pending(destination, event, ledger, db
     await Synchronizer(destination, ledger, write=True).sync(event(), report)
     assert report.counts["uncertain"] == 1
     assert ledger.get("event-1")["state"] == "pending"
+
+
+@pytest.mark.parametrize("kind", ["diaper", "bottle", "solids", "sleep"])
+@pytest.mark.parametrize("time", ["09:53:00", "10:07:00"])
+async def test_latest_time_correction_updates_summary_and_reruns(destination, event, ledger, db, kind, time):
+    from procareberry.huckleberry import LAST_FIELDS, LOCATIONS
+
+    values = {
+        "diaper": {"mode": "pee"},
+        "bottle": {"amount": 4, "bottle_type": "Formula", "units": "oz"},
+        "solids": {"foods": [{"name": "Banana"}]},
+        "sleep": {},
+    }[kind]
+    source = event(kind, values, end="2026-10-16T11:00:00-04:00" if kind == "sleep" else None)
+    syncer = Synchronizer(destination, ledger, write=True)
+    await syncer.sync(source, Report())
+    path = ledger.get(source.source_key)["body"]["path"]
+    corrected = replace(source, start=datetime.fromisoformat(f"2026-10-16T{time}-04:00"))
+    writes = db.write_count
+    preview = Report()
+    await Synchronizer(destination, ledger, write=False).sync(corrected, preview)
+    assert preview.counts == {"preview_update": 1}
+    assert db.write_count == writes
+    report = Report()
+    await syncer.sync(corrected, report)
+    await syncer.sync(corrected, report)
+    assert report.counts == {"updated": 1, "unchanged": 1}
+    assert db.data[path]["start"] == corrected.start.timestamp()
+    summary = db.data[f"{LOCATIONS[kind][0]}/child"]["prefs"][LAST_FIELDS[kind]]
+    assert summary["start"] == corrected.start.timestamp()
+    if kind == "sleep":
+        assert summary["duration"] == corrected.end.timestamp() - corrected.start.timestamp()
+    assert len([p for p in db.data if "/intervals/" in p]) == 1
+
+
+@pytest.mark.parametrize("batched", [False, True])
+async def test_time_correction_crossing_other_history_is_conflict(destination, event, ledger, db, batched):
+    source = event("diaper", {"mode": "pee"})
+    syncer = Synchronizer(destination, ledger, write=True)
+    await syncer.sync(source, Report())
+    other = {"start": source.start.timestamp() - 180, "mode": "poo", "offset": 240}
+    db.write("diaper/child/intervals/other", {"multi": True, "data": {"one": other}} if batched else other)
+    writes = db.write_count
+    original = ledger.get(source.source_key)
+    corrected = replace(source, start=datetime.fromisoformat("2026-10-16T09:53:00-04:00"))
+    report = Report()
+    await syncer.sync(corrected, report)
+    await syncer.sync(corrected, report)
+    assert report.counts == {"conflict": 2}
+    assert db.write_count == writes
+    assert ledger.get(source.source_key) == original
+
+
+async def test_time_correction_preserves_newer_summary_and_blocks_overtaking(destination, event, ledger, db):
+    source = event("diaper", {"mode": "pee"})
+    syncer = Synchronizer(destination, ledger, write=True)
+    await syncer.sync(source, Report())
+    await destination.log(
+        await destination.prepare(event("diaper", {"mode": "poo"}, start="2026-10-16T11:00:00-04:00"))
+    )
+    summary = dict(db.data["diaper/child"]["prefs"]["lastDiaper"])
+    report = Report()
+    await syncer.sync(replace(source, start=datetime.fromisoformat("2026-10-16T10:30:00-04:00")), report)
+    assert report.counts == {"updated": 1}
+    assert db.data["diaper/child"]["prefs"]["lastDiaper"] == summary
+    writes = db.write_count
+    await syncer.sync(replace(source, start=datetime.fromisoformat("2026-10-16T11:30:00-04:00")), report)
+    assert report.counts["conflict"] == 1
+    assert db.write_count == writes
+
+
+async def test_manual_summary_edit_blocks_time_correction_without_failure(destination, event, ledger, db):
+    source = event("diaper", {"mode": "pee"})
+    syncer = Synchronizer(destination, ledger, write=True)
+    await syncer.sync(source, Report())
+    db.write("diaper/child", {"prefs.lastDiaper.mode": "poo"}, "update")
+    writes = db.write_count
+    report = Report()
+    await syncer.sync(replace(source, start=datetime.fromisoformat("2026-10-16T09:53:00-04:00")), report)
+    assert report.counts == {"conflict": 1}
+    assert db.write_count == writes
+
+
+async def test_time_correction_batch_rejects_concurrent_summary_edit(destination, event, ledger, db):
+    source = event("diaper", {"mode": "pee"})
+    syncer = Synchronizer(destination, ledger, write=True)
+    await syncer.sync(source, Report())
+    path = ledger.get(source.source_key)["body"]["path"]
+    original_batch = db.batch
+
+    def racing_batch():
+        batch = original_batch()
+        commit = batch.commit
+
+        async def racing_commit():
+            db.write("diaper/child", {"prefs.lastDiaper.mode": "poo"}, "update")
+            return await commit()
+
+        batch.commit = racing_commit
+        return batch
+
+    db.batch = racing_batch
+    report = Report()
+    await syncer.sync(replace(source, start=datetime.fromisoformat("2026-10-16T09:53:00-04:00")), report)
+    assert report.counts == {"failed": 1}
+    assert db.data[path]["start"] == source.start.timestamp()
+    assert db.data["diaper/child"]["prefs"]["lastDiaper"]["mode"] == "poo"
+
+
+async def test_time_correction_ignores_other_category_history(destination, event, ledger, db):
+    source = event()
+    syncer = Synchronizer(destination, ledger, write=True)
+    await syncer.sync(source, Report())
+    db.write(
+        "feed/child/intervals/other",
+        {"multi": True, "data": {"solid": {"start": source.start.timestamp(), "mode": "solids"}}},
+    )
+    report = Report()
+    await syncer.sync(replace(source, start=datetime.fromisoformat("2026-10-16T09:53:00-04:00")), report)
+    assert report.counts == {"updated": 1}
+
+
+async def test_same_time_history_blocks_ambiguous_summary_correction(destination, event, ledger, db):
+    source = event("diaper", {"mode": "pee"})
+    syncer = Synchronizer(destination, ledger, write=True)
+    await syncer.sync(source, Report())
+    db.write(
+        "diaper/child/intervals/other", {"start": source.start.timestamp(), "mode": "pee", "offset": 240}
+    )
+    writes = db.write_count
+    report = Report()
+    await syncer.sync(replace(source, start=datetime.fromisoformat("2026-10-16T10:07:00-04:00")), report)
+    assert report.counts == {"conflict": 1}
+    assert db.write_count == writes
+
+
+async def test_lost_time_correction_ack_does_not_duplicate_or_overwrite(destination, event, ledger, db):
+    source = event("diaper", {"mode": "pee"})
+    syncer = Synchronizer(destination, ledger, write=True)
+    await syncer.sync(source, Report())
+    correct = destination.correct
+
+    async def lose_ack(record, prepared):
+        await correct(record, prepared)
+        raise TimeoutError("synthetic acknowledgement loss")
+
+    destination.correct = lose_ack
+    corrected = replace(source, start=datetime.fromisoformat("2026-10-16T09:53:00-04:00"))
+    report = Report()
+    await syncer.sync(corrected, report)
+    assert report.counts == {"failed": 1}
+    writes = db.write_count
+    await syncer.sync(corrected, report)
+    assert report.counts["skipped"] == 1
+    assert db.write_count == writes
+    assert len([p for p in db.data if "/intervals/" in p]) == 1
+    assert db.data["diaper/child"]["prefs"]["lastDiaper"]["start"] == corrected.start.timestamp()

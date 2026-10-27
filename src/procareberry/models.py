@@ -17,6 +17,10 @@ class MappingError(SyncError):
     pass
 
 
+class CorrectionConflict(SyncError):
+    """A correction needs review, but the sync service is functioning."""
+
+
 def encoded(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
 

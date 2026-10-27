@@ -9,7 +9,16 @@ import aiohttp
 from .config import check_window
 from .huckleberry import HistoricalAPI, Huckleberry
 from .mapping import Mapper
-from .models import Event, MappingError, Prepared, Report, SyncError, event_details, fingerprint
+from .models import (
+    CorrectionConflict,
+    Event,
+    MappingError,
+    Prepared,
+    Report,
+    SyncError,
+    event_details,
+    fingerprint,
+)
 from .procare import AiohttpTransport, ProcareClient
 from .storage import Ledger, private_json, read_json
 
@@ -200,6 +209,8 @@ class Synchronizer:
             if recovered:
                 report.counts["recovered"] -= 1
                 report.add("created")
+        except CorrectionConflict as exc:
+            report.add("conflict", str(exc), detail=event_details(event))
         except MappingError as exc:
             report.add("skipped", str(exc), detail=event_details(event))
         except Exception as exc:
