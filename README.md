@@ -108,6 +108,7 @@ Procareberry signs in with your Procare parent email and password. Accounts requ
 - Procareberry tracks each Procare activity separately, so two feeds or diapers close together stay separate.
 - Matching entries already in Huckleberry are skipped and left alone. Sleep records that overlap existing sleep are skipped for review.
 - Daycare corrections carry over only to entries Procareberry created that you have not edited. If you edit or delete an entry in Huckleberry, Procareberry leaves it alone for the rest of the 90-day tracking period.
+- Time corrections carry over when they preserve which entry is latest in its category. Corrections that would change the latest entry, or conflict with a manual edit, are left for review and reported as conflicts.
 - Removing an activity from Procare never deletes it from Huckleberry. Changes to the activity category or child pairing, and corrections that cannot be matched confidently, are flagged for review.
 
 ### Polling and logs
@@ -115,6 +116,8 @@ Procareberry signs in with your Procare parent email and password. Accounts requ
 Each poll checks the last seven days, so its totals can include activities from earlier days. The summary includes the checked date range; individual decisions show when the activity happened. If an activity has invalid or missing identifying information, its log metadata may say `unavailable`.
 
 Each poll logs its totals, ignored counts by activity type, and every skipped entry or conflict. Those details repeat while the same activities remain in the seven-day window, so the latest poll contains the full picture. Run `status` for the latest totals and decision details.
+
+Skipped entries and conflicts that need manual review do not make the container unhealthy. Failed account access or destination operations, unresolved interrupted imports, and an overdue poll do make it unhealthy.
 
 ### Interrupted imports
 

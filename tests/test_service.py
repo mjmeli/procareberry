@@ -238,3 +238,54 @@ async def test_sync_after_automatic_account_switch(tmp_path, destination, event,
         )
         assert ledger.get(key)["state"] == ("released" if state in {"edited", "deleted"} else "owned")
         ledger.close()
+
+
+@pytest.mark.parametrize("outcome", ["updated", "conflict", "failed", "uncertain"])
+async def test_correction_review_health(tmp_path, destination, db, monkeypatch, outcome):
+    records = [
+        {
+            "id": "synthetic-diaper",
+            "kid_id": "kid",
+            "activity_type": "bathroom_activity",
+            "activity_time": "2026-10-16T10:00:00-04:00",
+            "data": {"type": "diaper", "sub_type": "wet"},
+        }
+    ]
+    source = SimpleNamespace(
+        base="school",
+        children=AsyncMock(return_value=[{"id": "kid"}]),
+        activities=AsyncMock(return_value=records),
+    )
+    destination.api.user_uid = "synthetic-account"
+    destination.children = AsyncMock(return_value=[{"id": "child"}])
+
+    async def connect(settings, callback):
+        return await callback(source, destination)
+
+    monkeypatch.setattr(service, "connected", connect)
+    now = datetime.fromisoformat("2026-10-16T15:00:00-04:00")
+    settings = Settings(data_dir=tmp_path, write_enabled=True)
+    if outcome == "uncertain":
+        destination.log = AsyncMock(side_effect=TimeoutError("synthetic write timeout"))
+    initial = await service.run_window(settings, now.date(), now.date(), now=now)
+    if outcome != "uncertain":
+        assert initial["counts"]["created"] == 1
+    records[0]["activity_time"] = "2026-10-16T09:53:00-04:00"
+    if outcome == "conflict":
+        db.write(
+            "diaper/child/intervals/manual",
+            {"start": now.replace(hour=9, minute=57).timestamp(), "mode": "poo", "offset": 240},
+        )
+    elif outcome == "failed":
+        destination.correct = AsyncMock(side_effect=TimeoutError("synthetic connection failure"))
+    result = await service.run_window(settings, now.date(), now.date(), now=now)
+    assert result["counts"][outcome] == 1
+    assert result["ok"] == (outcome in {"updated", "conflict"})
+    assert service.health(settings) == result["ok"]
+    if outcome == "conflict":
+        assert result["diagnostics"][0]["result"] == "conflict"
+        # Review is retried on later polls without silently releasing ownership.
+        del db.data["diaper/child/intervals/manual"]
+        result = await service.run_window(settings, now.date(), now.date(), now=now)
+        assert result["counts"] == {"updated": 1}
+        assert service.health(settings)
